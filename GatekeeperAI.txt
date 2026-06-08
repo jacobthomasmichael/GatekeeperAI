@@ -1,0 +1,213 @@
+GatekeeperAI — Product Prospectus
+                                                                                              
+  (working name)
+                                                                                              
+  ---                                                       
+  The Problem
+                                                                                              
+  Enterprise companies are pushing employees to build with AI. Individual contributors — data
+  analysts, ops managers, customer success teams — are shipping genuinely useful internal     
+  tools over weekends. The problem isn't talent or ambition. It's what happens next.
+                                                                                              
+  There is no sanctioned path to deploy those tools. The choices today are:                   
+   
+  - Shadow IT — the app runs on someone's laptop, accessed via a shared link, with no logging,
+   no access control, no audit trail                        
+  - IT ticket — 6-18 months to get a proper deployment, by which point the need has passed    
+  - Retool / Internal.io / Superblocks — powerful, but requires rewriting the app in a proprietary component
+   system                                                                                     
+                                                                                              
+  CISOs know shadow IT is happening. They can't stop it. They can only wait for it to become a
+   breach.                                                  
+                                                                                              
+  ---                                                       
+  The Solution
+              
+  A secure enterprise app runtime — a walled garden where individual contributors can submit
+  any app they've already built, route it through an automated compliance pre-screen and human
+   approval workflow, and get it into the hands of their team with full SOC 2 Type II controls
+   in place.                                                                                  
+                                                            
+  For the IC: Submit your app. Get a decision. Ship to your team.                             
+   
+  For the CISO: Every app that runs here is scanned, approved, logged, and access-controlled. 
+  You define the rules once. The platform enforces them on everything.
+                                                                                              
+  ---                                                       
+  How It Works
+                                                                                              
+  1. Built-in Git Repository
+                                                                                              
+  The platform hosts its own git repositories. ICs create a repo on the platform, push their  
+  code, and a git push triggers everything — no webhooks to configure, no GitHub integration
+  to authorize, no code leaving the perimeter.                                                
+                                                            
+  This is a deliberate security decision: code lives inside the platform, not on a third-party
+   service.
+                                                                                              
+  2. Automated Pre-Screening Pipeline                       
+
+  Every push triggers an automated scan:                                                      
+   
+  ┌────────────────────┬──────────────────────────────────────────────────────────────────┐   
+  │       Check        │                           What it does                           │
+  ├────────────────────┼──────────────────────────────────────────────────────────────────┤   
+  │ Secrets scan       │ Detects API keys, tokens, credentials committed to the repo      │
+  ├────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ Dependency audit   │ Flags known vulnerable packages (CVE database)                   │   
+  ├────────────────────┼──────────────────────────────────────────────────────────────────┤   
+  │ Network egress     │ Identifies external URLs and APIs the app calls                  │   
+  │ analysis           │                                                                  │   
+  ├────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ Data               │ Detects PII, financial data, credential handling in code         │   
+  │ classification     │                                                                  │
+  ├────────────────────┼──────────────────────────────────────────────────────────────────┤   
+  │ LLM description    │ Generates a plain-English summary of what the app actually does  │
+  │                    │ — cross-checked against the submitter's stated description       │   
+  ├────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ Risk tier          │ Auto-classifies the app as Green / Yellow / Red                  │
+  │ assignment         │                                                                  │   
+  └────────────────────┴──────────────────────────────────────────────────────────────────┘
+                                                                                              
+  3. Approval Workflow                                      
+
+  ┌──────────┬─────────────────────────────────────────────┬─────────────────────────────┐    
+  │   Tier   │                  Criteria                   │            Path             │
+  ├──────────┼─────────────────────────────────────────────┼─────────────────────────────┤    
+  │ 🟢 Green │ No external calls, no sensitive data, clean │ Auto-approved, live in      │
+  │          │  scan                                       │ minutes                     │
+  ├──────────┼─────────────────────────────────────────────┼─────────────────────────────┤    
+  │ 🟡       │ External API calls, non-sensitive data      │ Human approver, 24hr SLA    │
+  │ Yellow   │                                             │                             │    
+  ├──────────┼─────────────────────────────────────────────┼─────────────────────────────┤
+  │ 🔴 Red   │ PII, financial data, external data egress   │ Full security review        │    
+  └──────────┴─────────────────────────────────────────────┴─────────────────────────────┘    
+   
+  Approvers get a single dashboard: one-click Approve or Reject, required comment, full       
+  automated scan report. No context-switching, no reading code.
+                                                                                              
+  4. Compliant Runtime                                      
+
+  Approved apps run in isolated containers. The platform wraps every app with:                
+   
+  - Authentication — SSO via SAML/OIDC, no app implements its own auth                        
+  - RBAC — access defined at submission time, enforced at the platform boundary
+  - Audit logging — every request, every login, every data access, immutable log              
+  - Rate limiting — per-user, per-app, configurable                                           
+  - Network policy — egress locked to the approved URL list from the scan                     
+  - Secrets injection — API keys and credentials injected at runtime, never stored in code    
+                                                                                              
+  The app author implements none of this. It's infrastructure, not their responsibility.      
+                                                                                              
+  5. The IC Experience                                                                        
+                                                            
+  1. Create a repo on the platform                                                            
+  2. Push your app (git push origin main)                   
+  3. Fill in: what does this do? Who should have access?                                      
+  4. Watch the automated scan run                                                             
+  5. Wait for approval (minutes to days depending on tier)                                    
+  6. Share the URL with your team                                                             
+                                                                                              
+  No Dockerfile. No YAML. No ticket to IT.                                                    
+                                                            
+  ---                                                                                         
+  What "Bring Your Own App" Means                           
+                                 
+  The platform is framework agnostic and language agnostic. It auto-detects:
+                                                                                              
+  ┌─────────────────┬────────────────────────────────────┐
+  │      Type       │              Examples              │                                    
+  ├─────────────────┼────────────────────────────────────┤  
+  │ Python web app  │ Flask, FastAPI, Streamlit, Gradio  │
+  ├─────────────────┼────────────────────────────────────┤
+  │ Node.js app     │ Express, Next.js, Remix            │                                    
+  ├─────────────────┼────────────────────────────────────┤
+  │ Static frontend │ React, Vue, plain HTML             │                                    
+  ├─────────────────┼────────────────────────────────────┤                                    
+  │ Data app        │ Streamlit, Dash, Evidence          │
+  ├─────────────────┼────────────────────────────────────┤                                    
+  │ AI/LLM app      │ Anything calling Claude, GPT, etc. │  
+  └─────────────────┴────────────────────────────────────┘                                    
+                                                            
+  If it runs in a container, it runs here. The IC doesn't have to learn a new framework or    
+  rewrite anything.                                         
+                                                                                              
+  ---                                                       
+  SOC 2 Type II Controls
+                        
+  The platform is designed to satisfy the five Trust Service Criteria out of the box:
+                                                                                              
+  ┌─────────────────────┬─────────────────────────────────────────────────────────────────┐   
+  │      Criteria       │                               How                               │   
+  ├─────────────────────┼─────────────────────────────────────────────────────────────────┤   
+  │ Security            │ RBAC, network isolation, secrets management, vulnerability      │
+  │                     │ scanning                                                        │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────────┤   
+  │ Availability        │ Container orchestration, health checks, restart policies        │   
+  ├─────────────────────┼─────────────────────────────────────────────────────────────────┤   
+  │ Processing          │ Immutable audit logs, approval chain documentation              │   
+  │ Integrity           │                                                                 │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────────┤
+  │ Confidentiality     │ Data classification, egress controls, encrypted storage         │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────────┤   
+  │ Privacy             │ PII detection at scan time, access logging, retention policies  │
+  └─────────────────────┴─────────────────────────────────────────────────────────────────┘   
+                                                            
+  ---                                                                                         
+  Target Buyers                                             
+               
+  Primary: CISO, VP of IT, Head of Information Security
+  - Care about: controls, audit trails, liability reduction                                   
+  - Pain: shadow IT they know is happening but can't see or stop                              
+                                                                                              
+  Champion: Head of Operations, Head of Customer Success, VP of Sales Ops                     
+  - Care about: their teams moving faster, not waiting 18 months for IT                       
+  - Pain: great tools stuck in approval purgatory forever                                     
+                                                                                              
+  The champion finds the product. The CISO approves the purchase. Both win.                   
+                                                                                              
+  ---                                                                                         
+  Business Model                                                                              
+                                                            
+  SaaS, per-seat pricing:
+                                                                                              
+  ┌────────────┬───────────────────────────┬──────────────────────────────────────────────┐
+  │    Tier    │          Target           │                    Price                     │   
+  ├────────────┼───────────────────────────┼──────────────────────────────────────────────┤
+  │ Starter    │ SMB, < 100 users          │ $X / user / month                            │
+  ├────────────┼───────────────────────────┼──────────────────────────────────────────────┤
+  │ Business   │ Mid-market, 100-1000      │ $X / user / month + SSO                      │   
+  │            │ users                     │                                              │
+  ├────────────┼───────────────────────────┼──────────────────────────────────────────────┤   
+  │ Enterprise │ 1000+ users               │ Custom, self-hosted option, dedicated        │   
+  │            │                           │ support                                      │
+  └────────────┴───────────────────────────┴──────────────────────────────────────────────┘   
+                                                            
+  Self-hosted (Enterprise tier) is a strong differentiator — some enterprises will not send   
+  code to a third-party SaaS under any circumstances. Offering a self-hosted option removes
+  that objection entirely.                                                                    
+                                                            
+  ---
+  Competitive Landscape
+                                                                                              
+  ┌───────────────────┬─────────────────────┬─────────────────────────────────────────────┐
+  │      Product      │    What they do     │             Why we're different             │   
+  ├───────────────────┼─────────────────────┼─────────────────────────────────────────────┤
+  │ Retool            │ Internal tool       │ Requires rewriting apps in their framework  │   
+  │                   │ builder             │                                             │
+  ├───────────────────┼─────────────────────┼─────────────────────────────────────────────┤   
+  │ Internal.io       │ Internal tool       │ Same limitation                             │   
+  │                   │ builder             │                                             │   
+  ├───────────────────┼─────────────────────┼─────────────────────────────────────────────┤   
+  │ Backstage         │ Developer portal    │ No compliance controls, requires            │
+  │ (Spotify)         │                     │ significant setup                           │   
+  ├───────────────────┼─────────────────────┼─────────────────────────────────────────────┤
+  │ ServiceNow        │ IT service          │ Not a runtime, approval only, extremely     │
+  │                   │ management          │ heavy                                       │   
+  ├───────────────────┼─────────────────────┼─────────────────────────────────────────────┤
+  │ Vercel / Render   │ App deployment      │ No compliance, approval, or access control  │   
+  │                   │                     │ layer                                       │   
+  └───────────────────┴─────────────────────┴─────────────────────────────────────────────┘
+                                                                                              
+  No one owns "bring your own app, run it compliantly." That's the gap.                       
+   
