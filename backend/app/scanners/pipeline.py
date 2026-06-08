@@ -171,6 +171,10 @@ async def _run_with_session(scan_id: str, SessionLocal) -> None:
             else:
                 submission.status = "awaiting_approval"
 
+            # Create approval record for Yellow/Red
+            from app.services.approval_service import route_after_scan
+            await route_after_scan(scan, submission, db)
+
             await db.commit()
 
         _publish(scan_id, {

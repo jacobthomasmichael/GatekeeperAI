@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.middleware.audit_middleware import AuditMiddleware
-from app.routers import auth, apps, scans
+from app.routers import auth, apps, scans, approvals
 
 app = FastAPI(
     title="GatekeeperAI",
@@ -24,6 +24,7 @@ API_PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(apps.router, prefix=API_PREFIX)
 app.include_router(scans.router, prefix=API_PREFIX)
+app.include_router(approvals.router, prefix=API_PREFIX)
 
 
 @app.get("/health")
