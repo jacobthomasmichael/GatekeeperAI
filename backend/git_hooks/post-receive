@@ -1,0 +1,6 @@
+#!/bin/bash
+# GatekeeperAI post-receive hook template
+# This file is copied and customised per-repo by the platform.
+# Do not push directly — use the platform API.
+echo "GatekeeperAI: hook not yet configured"
+exit 0
