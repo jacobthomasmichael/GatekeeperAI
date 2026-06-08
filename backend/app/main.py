@@ -1,9 +1,16 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from app.config import settings
 from app.middleware.audit_middleware import AuditMiddleware
-from app.routers import auth, apps, scans, approvals
+from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.routers import auth, apps, scans, approvals, deployments, secrets
+
+limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="GatekeeperAI",
@@ -11,6 +18,10 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -25,8 +36,24 @@ app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(apps.router, prefix=API_PREFIX)
 app.include_router(scans.router, prefix=API_PREFIX)
 app.include_router(approvals.router, prefix=API_PREFIX)
+app.include_router(deployments.router, prefix=API_PREFIX)
+app.include_router(secrets.router, prefix=API_PREFIX)
 
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "environment": settings.ENVIRONMENT}
+    import redis as sync_redis
+    services: dict[str, str] = {}
+    try:
+        r = sync_redis.from_url(settings.REDIS_URL, decode_responses=True)
+        r.ping()
+        r.close()
+        services["redis"] = "ok"
+    except Exception:
+        services["redis"] = "error"
+
+    return {
+        "status": "ok",
+        "environment": settings.ENVIRONMENT,
+        "services": services,
+    }

@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     GIT_REPOS_BASE_PATH: str
     SECRET_ENCRYPTION_KEY: str
     ENVIRONMENT: str = "development"
+    APP_BASE_URL: str = "http://localhost"
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30

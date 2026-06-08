@@ -55,7 +55,8 @@ async def process_decision(
 
     if decision == "approved":
         submission.status = "approved"
-        # Phase 5: trigger deployment here
+        from worker.deploy_task import deploy_approved_app
+        deploy_approved_app.delay(str(approval.id))
     else:
         submission.status = "rejected"
 
