@@ -1,10 +1,13 @@
 services:
+
+  # ── Infrastructure ───────────────────────────────────────────────────────────
+
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: gatekeeperai
       POSTGRES_USER: gatekeeper
-      POSTGRES_PASSWORD: gatekeeper_dev
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-gatekeeper_dev}
     ports:
       - "5433:5432"
     volumes:
@@ -13,17 +16,115 @@ services:
       test: ["CMD-SHELL", "pg_isready -U gatekeeper -d gatekeeperai"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+    restart: unless-stopped
 
   redis:
     image: redis:7.2-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ── Backend API ───────────────────────────────────────────────────────────────
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: gatekeeperai-backend:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://gatekeeper:${DB_PASSWORD:-gatekeeper_dev}@postgres:5432/gatekeeperai
+      REDIS_URL: redis://redis:6379/0
+      GIT_REPOS_BASE_PATH: /git-repos
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+    volumes:
+      - git_repos:/git-repos
+      - app_env:/app/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Run migrations then start the server
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 5s
       retries: 5
+      start_period: 30s
+
+  # ── Celery Worker ─────────────────────────────────────────────────────────────
+
+  worker:
+    image: gatekeeperai-backend:latest
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    command: celery -A worker.celery_app.celery_app worker --loglevel=info --concurrency=2
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://gatekeeper:${DB_PASSWORD:-gatekeeper_dev}@postgres:5432/gatekeeperai
+      REDIS_URL: redis://redis:6379/0
+      GIT_REPOS_BASE_PATH: /git-repos
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+    volumes:
+      - git_repos:/git-repos
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Celery Beat ───────────────────────────────────────────────────────────────
+
+  beat:
+    image: gatekeeperai-backend:latest
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    command: celery -A worker.celery_app.celery_app beat --loglevel=info
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://gatekeeper:${DB_PASSWORD:-gatekeeper_dev}@postgres:5432/gatekeeperai
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # ── Frontend ──────────────────────────────────────────────────────────────────
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+  redis_data:
+  git_repos:
+  app_env:
