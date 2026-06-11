@@ -334,4 +334,167 @@ For all three options, the process is the same high-level flow:
 
 ---
 
+## Setting up a custom domain name
+
+A custom domain (like `gatekeeper.yourcompany.com`) makes the app easier to find and looks more professional than an IP address. It also lets you use HTTPS, which encrypts the connection and removes browser security warnings.
+
+This section walks through the full process — from buying a domain to getting the green padlock in the browser. These steps work on AWS, Azure, GCP, or any other server.
+
+**Time estimate:** 20–40 minutes, plus up to 48 hours for the domain name to fully propagate across the internet (usually much faster — often under an hour).
+
+---
+
+### Part 1 — Get a domain name
+
+If your company already has a domain (e.g. `yourcompany.com`), you can create a **subdomain** like `gatekeeper.yourcompany.com` for free — ask your IT team or whoever manages your company's website to add a DNS record (explained in Part 2).
+
+If you need to register a new domain:
+
+1. Go to a domain registrar such as **[Namecheap](https://www.namecheap.com)**, **[Google Domains](https://domains.google)**, or **[GoDaddy](https://www.godaddy.com)**.
+2. Search for the domain name you want.
+3. Purchase it (most `.com` domains cost $10–$15 per year).
+
+---
+
+### Part 2 — Point the domain at your server
+
+DNS is the internet's address book — it tells browsers which server to go to when someone types your domain name. You need to add one record called an **A record** that links your domain to your server's IP address.
+
+1. Log in to wherever your domain is registered (Namecheap, GoDaddy, or your cloud provider's DNS panel — see below).
+2. Find the **DNS settings** or **DNS Management** section for your domain.
+3. Add a new record with these values:
+
+   | Field | Value |
+   |---|---|
+   | Type | **A** |
+   | Name / Host | `@` (means the root domain) or `gatekeeper` (for a subdomain) |
+   | Value / Points to | Your server's IP address (e.g. `1.2.3.4`) |
+   | TTL | 3600 (or leave as default) |
+
+   **Example:** If your domain is `yourcompany.com` and you want `gatekeeper.yourcompany.com`, set **Name** to `gatekeeper` and **Value** to your server's IP.
+
+4. Save the record. Changes can take a few minutes to a few hours to take effect.
+
+**Finding your DNS settings by cloud provider:**
+- **AWS:** Use **Route 53** → Hosted zones → your domain → Create record.
+- **Azure:** Use **Azure DNS zones** → your zone → + Record set.
+- **GCP:** Use **Cloud DNS** → your zone → Add record set.
+- **Domain registrar (Namecheap, GoDaddy, etc.):** Log in to the registrar's website → find "DNS" or "Manage Domain" → Advanced DNS.
+
+To check whether the domain is pointing to your server yet, go to **[whatsmydns.net](https://www.whatsmydns.net)**, type your domain, and see if it shows your server's IP address.
+
+---
+
+### Part 3 — Install a reverse proxy (Nginx)
+
+Right now, GatekeeperAI runs on ports 3000 and 8000. A **reverse proxy** is a small piece of software that sits in front of the app and handles incoming web traffic on the standard ports (80 for HTTP, 443 for HTTPS), then forwards it to the right place. Think of it as a receptionist who directs visitors to the correct room.
+
+Connect to your server via SSH and run:
+
+```
+sudo apt update && sudo apt install -y nginx
+```
+
+---
+
+### Part 4 — Get a free SSL certificate
+
+SSL is what gives you the `https://` prefix and the padlock icon in the browser. It encrypts data between your users and the server. **Let's Encrypt** provides free, automatically renewing SSL certificates.
+
+On your server, run:
+
+```
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d gatekeeper.yourcompany.com
+```
+
+Replace `gatekeeper.yourcompany.com` with your actual domain. Certbot will ask for your email address (for renewal reminders) and whether to redirect HTTP to HTTPS — choose **yes** to the redirect.
+
+> Certbot will fail if the domain isn't pointing to your server yet. Make sure Part 2 is done and the DNS has propagated before running this step.
+
+---
+
+### Part 5 — Configure Nginx to route traffic to GatekeeperAI
+
+Now tell Nginx where to send traffic. On your server, run:
+
+```
+sudo nano /etc/nginx/sites-available/gatekeeperai
+```
+
+This opens a text editor. Paste in the following, replacing `gatekeeper.yourcompany.com` with your actual domain:
+
+```nginx
+server {
+    listen 80;
+    server_name gatekeeper.yourcompany.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name gatekeeper.yourcompany.com;
+
+    ssl_certificate     /etc/letsencrypt/live/gatekeeper.yourcompany.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/gatekeeper.yourcompany.com/privkey.pem;
+
+    # Web app
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # API
+    location /api/ {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+Save the file by pressing `Ctrl+O`, then Enter, then `Ctrl+X` to exit.
+
+Now activate the configuration and restart Nginx:
+
+```
+sudo ln -s /etc/nginx/sites-available/gatekeeperai /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+The second command (`nginx -t`) checks for typos — if it says "syntax is ok," you're good to proceed.
+
+---
+
+### Part 6 — Update GatekeeperAI to use your domain
+
+Open your `.env` file on the server and update these two lines to use your actual domain:
+
+```
+APP_BASE_URL=https://gatekeeper.yourcompany.com
+NEXT_PUBLIC_API_URL=https://gatekeeper.yourcompany.com/api/v1
+```
+
+Then rebuild and restart GatekeeperAI:
+
+```
+docker compose -f infra/docker-compose.yml up --build -d
+```
+
+The `-d` flag runs it in the background so it keeps running after you close the terminal.
+
+---
+
+### Part 7 — Verify everything is working
+
+1. Open your browser and go to `https://gatekeeper.yourcompany.com`.
+2. You should see the GatekeeperAI login page with a padlock icon in the browser's address bar.
+3. If you see a security warning instead, wait a few more minutes for the SSL certificate to activate and try again.
+
+Your SSL certificate will **automatically renew** every 90 days — Certbot handles this for you with no action required.
+
+---
+
 *Questions or issues? Open a support ticket at [github.com/jacobthomasmichael/GatekeeperAI/issues](https://github.com/jacobthomasmichael/GatekeeperAI/issues).*
