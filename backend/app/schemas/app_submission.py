@@ -17,6 +17,16 @@ class AppCreate(BaseModel):
             raise ValueError("name must be 3-50 lowercase alphanumeric characters and hyphens")
         return v
 
+    @field_validator("description")
+    @classmethod
+    def description_length(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 10:
+            raise ValueError("Description must be at least 10 characters")
+        if len(v) > 2000:
+            raise ValueError("Description must be 2000 characters or fewer")
+        return v
+
 
 class RejectionFeedback(BaseModel):
     decision: str

@@ -2,11 +2,19 @@ import uuid
 from datetime import datetime
 from typing import Optional, Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class ScanTriggerRequest(BaseModel):
     commit_sha: str
+
+    @field_validator("commit_sha")
+    @classmethod
+    def commit_sha_format(cls, v: str) -> str:
+        import re
+        if not re.match(r"^[0-9a-f]{40}$", v):
+            raise ValueError("commit_sha must be a 40-character hex SHA")
+        return v
 
 
 class ScanResultResponse(BaseModel):

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     APP_BASE_URL: str = "http://localhost"
 
+    # Post-receive hook — if set, trigger endpoint requires matching X-Hook-Secret header
+    HOOK_SECRET: str = ""
+
     # Email — all optional; if SMTP_HOST is unset, notifications log only
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
@@ -30,4 +33,21 @@ class Settings(BaseSettings):
         return self.ENVIRONMENT == "production"
 
 
-settings = Settings()
+_SENSITIVE = {
+    "SECRET_KEY", "SECRET_ENCRYPTION_KEY", "ANTHROPIC_API_KEY",
+    "SMTP_PASSWORD", "HOOK_SECRET",
+}
+
+
+class _SafeSettings(Settings):
+    def __repr__(self) -> str:
+        pairs = []
+        for k, v in self.__dict__.items():
+            pairs.append(f"{k}={'***' if k.upper() in _SENSITIVE else repr(v)}")
+        return f"Settings({', '.join(pairs)})"
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+
+settings = _SafeSettings()

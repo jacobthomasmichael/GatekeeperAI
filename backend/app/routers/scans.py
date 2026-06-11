@@ -1,7 +1,8 @@
+import hmac
 import json
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,9 +21,14 @@ router = APIRouter(prefix="/scans", tags=["scans"])
 async def trigger_scan(
     app_id: uuid.UUID,
     payload: ScanTriggerRequest,
+    x_hook_secret: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Called by the post-receive git hook after each push to main."""
+    if settings.HOOK_SECRET:
+        if not x_hook_secret or not hmac.compare_digest(x_hook_secret, settings.HOOK_SECRET):
+            raise HTTPException(status_code=401, detail="Invalid hook secret")
+
     result = await db.execute(select(AppSubmission).where(AppSubmission.id == app_id))
     app = result.scalar_one_or_none()
     if not app:
