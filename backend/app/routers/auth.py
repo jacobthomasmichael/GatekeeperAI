@@ -6,38 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, get_current_user
 from app.models.user import User
-from app.schemas.user import UserRegister, UserLogin, UserResponse, TokenResponse, RefreshRequest
+from app.schemas.user import UserLogin, UserResponse, TokenResponse, RefreshRequest
 from app.services.auth_service import (
-    hash_password, verify_password,
+    verify_password,
     create_access_token, create_refresh_token, decode_token,
     store_refresh_jti, consume_refresh_jti, revoke_refresh_jti,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 _limiter = Limiter(key_func=get_remote_address)
-
-
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-@_limiter.limit("10/minute")
-async def register(request: Request, payload: UserRegister, db: AsyncSession = Depends(get_db)) -> User:
-    existing = await db.execute(select(User).where(User.email == payload.email))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Email already registered")
-
-    existing_username = await db.execute(select(User).where(User.username == payload.username))
-    if existing_username.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Username already taken")
-
-    user = User(
-        email=payload.email,
-        username=payload.username,
-        hashed_password=hash_password(payload.password),
-        role="ic",
-    )
-    db.add(user)
-    await db.flush()
-    await db.refresh(user)
-    return user
 
 
 @router.post("/login", response_model=TokenResponse)

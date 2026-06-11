@@ -1,7 +1,12 @@
 import asyncio
+import os
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+
+# Disable rate limiting for the test suite so login fixture calls don't
+# exhaust per-IP buckets across the many tests that share a client.
+os.environ["RATELIMIT_ENABLED"] = "0"
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from app.database import Base
 from app.deps import get_db

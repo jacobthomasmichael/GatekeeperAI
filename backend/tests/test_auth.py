@@ -9,35 +9,31 @@ async def test_health(client):
 
 
 @pytest.mark.asyncio
-async def test_register_and_login(client):
+async def test_register_endpoint_removed(client):
     resp = await client.post("/api/v1/auth/register", json={
-        "email": "newuser_reg@example.com",
-        "username": "newuser_reg",
+        "email": "anyone@example.com",
+        "username": "anyone",
         "password": "password123",
     })
-    assert resp.status_code == 201
-    data = resp.json()
-    assert data["email"] == "newuser_reg@example.com"
-    assert data["role"] == "ic"
-
-    resp = await client.post("/api/v1/auth/login", json={
-        "email": "newuser_reg@example.com",
-        "password": "password123",
-    })
-    assert resp.status_code == 200
-    tokens = resp.json()
-    assert "access_token" in tokens
-    assert tokens["token_type"] == "bearer"
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_duplicate_email_rejected(client, ic_user):
-    resp = await client.post("/api/v1/auth/register", json={
-        "email": ic_user.email,
-        "username": "completely_different",
+async def test_admin_create_and_login(client, admin_token):
+    resp = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "created@example.com", "username": "created_user", "password": "password123", "role": "ic"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["role"] == "ic"
+
+    resp = await client.post("/api/v1/auth/login", json={
+        "email": "created@example.com",
         "password": "password123",
     })
-    assert resp.status_code == 409
+    assert resp.status_code == 200
+    assert "access_token" in resp.json()
 
 
 @pytest.mark.asyncio

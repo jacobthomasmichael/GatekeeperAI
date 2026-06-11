@@ -50,7 +50,7 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-production}
     volumes:
       - git_repos:/git-repos
-      - app_env:/app/config
+      - ../.env:/app/.env  # bind-mount so setup wizard writes persist to host
     depends_on:
       postgres:
         condition: service_healthy
@@ -127,4 +127,3 @@ volumes:
   postgres_data:
   redis_data:
   git_repos:
-  app_env:

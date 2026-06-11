@@ -14,32 +14,32 @@ from app.models.approval import Approval
 # ── Input validation ──────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_register_username_too_short(client):
-    resp = await client.post("/api/v1/auth/register", json={
-        "email": "short@example.com",
-        "username": "ab",
-        "password": "password123",
-    })
+async def test_create_user_username_too_short(client, admin_token):
+    resp = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "short@example.com", "username": "ab", "password": "password123", "role": "ic"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
     assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_register_password_too_short(client):
-    resp = await client.post("/api/v1/auth/register", json={
-        "email": "weakpass@example.com",
-        "username": "validuser",
-        "password": "short",
-    })
+async def test_create_user_password_too_short(client, admin_token):
+    resp = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "weakpass@example.com", "username": "validuser", "password": "short", "role": "ic"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
     assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_register_invalid_username_chars(client):
-    resp = await client.post("/api/v1/auth/register", json={
-        "email": "baduser@example.com",
-        "username": "user name!",
-        "password": "password123",
-    })
+async def test_create_user_invalid_username_chars(client, admin_token):
+    resp = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "baduser@example.com", "username": "user name!", "password": "password123", "role": "ic"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
     assert resp.status_code == 422
 
 

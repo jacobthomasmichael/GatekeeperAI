@@ -213,8 +213,6 @@ export interface Deployment {
 export const authApi = {
   login: (email: string, password: string) =>
     api.post<TokenResponse>("/auth/login", { email, password }),
-  register: (email: string, username: string, password: string) =>
-    api.post<User>("/auth/register", { email, username, password }),
   me: () => api.get<User>("/auth/me"),
 };
 

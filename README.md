@@ -1,70 +1,78 @@
 # GatekeeperAI
 
-GatekeeperAI is an internal workflow assistant that orchestrates **access and operational requests** inside large organizations.
+GatekeeperAI is an on-premises platform that lets enterprise teams safely adopt third-party and internal AI applications. Every app goes through automated security scanning, human approval, and sandboxed container deployment before any user can access it.
 
-Think of it as **“RFPIO for internal processes”**:
+---
 
-- A person needs something done (e.g., *“Create a service account for Superblocks with read-only access to X database”*).
-- GatekeeperAI captures the request in a structured form.
-- It automatically:
-  - Routes the request to the right owners/teams.
-  - Creates/updates Jira tickets as needed.
-  - Tracks status and required actions across teams.
-- Requesters see everything in a **simple, centralized dashboard**.
+## How it works
 
-## POC Goals
+1. **Submit** — A developer pushes their app's code to the GatekeeperAI git server.
+2. **Scan** — The platform automatically runs five scanners: secrets detection, dependency vulnerability audit, egress network analysis, PII exposure check, and an LLM-powered code review via Claude AI.
+3. **Review** — A designated approver reviews the scan results and approves or rejects the app, with an SLA deadline tracked automatically.
+4. **Deploy** — Approved apps are built into Docker containers and launched in an isolated environment, accessible via a public URL.
+5. **Manage** — Runtime secrets (API keys, credentials) are injected as environment variables at deploy time, never stored in the code.
 
-The initial proof-of-concept (POC) focuses on:
+---
 
-1. **Data model in Postgres (Neon)**
-   - `request_types`
-   - `requests`
-   - `request_steps` / `request_actions`
-   - `routing_rules` (who/what gets notified or assigned)
+## Key features
 
-2. **Superblocks-based “Internal Request Hub”**
-   - Form to submit a new request (e.g., “Create DB service account for Superblocks”).
-   - Workflow to:
-     - Persist the request to Postgres.
-     - Call Jira Cloud APIs to create a ticket.
-     - Record per-step actions (approvals, tasks, etc.).
-   - “My Requests” page to track status and action items.
+- **Automated multi-scanner pipeline** — secrets, CVEs, egress rules, PII, and LLM code review run in parallel on every push
+- **Risk tiering** — apps are automatically scored and assigned a risk tier (low / medium / high / critical) that determines review urgency
+- **SLA enforcement** — overdue approvals are flagged and escalators are notified via email
+- **Encrypted secret injection** — per-app secrets are AES-256 encrypted at rest and injected at container startup
+- **Audit log** — every action (approval, deployment, secret change) is recorded with actor, IP, and timestamp
+- **Admin panel** — user management (create, disable, change roles), audit log viewer, platform-wide metrics
+- **Setup wizard** — first-run wizard configures the instance with no config-file editing required
+- **Secure by default** — JWT with refresh token rotation, rate limiting on all endpoints, security headers (CSP, HSTS, etc.), non-root containers
 
-3. **Jira Integration**
-   - Use Jira Cloud (free tier sandbox) for:
-     - Ticket creation.
-     - Status updates.
-     - Assignment / basic workflow.
-   - Sync back to Postgres so Superblocks can display up-to-date status.
+---
 
-4. **MVP Dashboard**
-   - Requester view:
-     - All their requests.
-     - Status per step (e.g., “Security review pending”, “DB team implementing”, “Completed”).
-   - Optional admin view:
-     - All requests by status, team, or request type.
+## Tech stack
 
-## Tech Stack (POC)
+| Layer | Technology |
+|---|---|
+| Backend API | FastAPI + SQLAlchemy 2.0 async + PostgreSQL 16 |
+| Task queue | Celery + Redis |
+| Container runtime | Docker SDK (Python) |
+| LLM | Anthropic Claude API |
+| Frontend | Next.js 16 (App Router) + Tailwind CSS |
+| Auth | JWT (access + refresh) with Redis-backed JTI rotation |
 
-- **Frontend / Orchestration UI:** Superblocks
-- **Database:** Postgres on [Neon.tech](https://neon.tech/)
-- **Issue Tracking / Workflow Engine:** Jira Cloud (free sandbox)
-- **Repo:** GitHub private repo (`GatekeeperAI`) for:
-  - DB schema & seed scripts
-  - Integration notes & API examples
-  - Architecture diagrams & product docs
-  - Potential future backend/API code
+---
 
-## Next Steps
+## Getting started
 
-1. Set up Neon Postgres instance and create initial schema (`db/schema.sql`).
-2. Stand up a Jira Cloud free sandbox and create:
-   - A test project
-   - Sample components / labels for routing
-3. Configure Superblocks to:
-   - Connect to Neon (read/write)
-   - Talk to Jira Cloud via REST step (API token + email)
-4. Build:
-   - “Create Request” page
-   - “My Requests” dashboard
-   - Background workflow to sync Jira status → Postgres
+See **[INSTALL.md](./INSTALL.md)** for full setup instructions, including local installation, AWS/Azure/GCP cloud hosting, and custom domain with SSL.
+
+**Quick start (requires Docker):**
+
+```bash
+cp .env.example .env
+# Fill in SECRET_KEY, SECRET_ENCRYPTION_KEY, and ANTHROPIC_API_KEY in .env
+docker compose -f infra/docker-compose.yml up --build
+```
+
+Then open `http://localhost:3000` and follow the setup wizard.
+
+---
+
+## Project structure
+
+```
+backend/        FastAPI application, scanners, Celery workers, Alembic migrations
+frontend/       Next.js web application
+infra/          Docker Compose configuration
+worker/         Celery task definitions (deploy, SLA checks)
+```
+
+---
+
+## User roles
+
+| Role | Can do |
+|---|---|
+| `ic` (individual contributor) | Submit apps, view own apps and scan results |
+| `approver` | Everything an IC can do, plus review and decide on pending approvals, view all deployments |
+| `admin` | Everything an approver can do, plus manage users, stop/start deployments, view audit logs |
+
+New users are created by an admin — there is no public self-registration.
