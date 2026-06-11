@@ -3,7 +3,6 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-
 from app.database import Base
 from app.deps import get_db
 from app.main import app
@@ -20,6 +19,8 @@ def pytest_configure(config):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     engine.dispose()
+
+
 
 
 @pytest_asyncio.fixture

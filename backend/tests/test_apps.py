@@ -45,12 +45,12 @@ async def test_duplicate_app_name_rejected(client, ic_token):
         mock_create.return_value = ("/tmp/dup.git", "file:///tmp/dup.git")
         await client.post(
             "/api/v1/apps/",
-            json={"name": "unique-app", "description": "first"},
+            json={"name": "unique-app", "description": "first submission description"},
             headers={"Authorization": f"Bearer {ic_token}"},
         )
         resp = await client.post(
             "/api/v1/apps/",
-            json={"name": "unique-app", "description": "second"},
+            json={"name": "unique-app", "description": "second submission description"},
             headers={"Authorization": f"Bearer {ic_token}"},
         )
     assert resp.status_code == 409
