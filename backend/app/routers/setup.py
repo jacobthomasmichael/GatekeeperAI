@@ -1,8 +1,10 @@
 import os
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, field_validator
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +13,8 @@ from app.models.user import User
 from app.services.auth_service import hash_password
 
 router = APIRouter(prefix="/setup", tags=["setup"])
+
+_limiter = Limiter(key_func=get_remote_address)
 
 _ENV_FILE_PATH = os.environ.get("ENV_FILE_PATH", ".env")
 
@@ -90,14 +94,16 @@ def _patch_env_file(updates: dict[str, str]) -> None:
 
 
 @router.get("/status")
-async def setup_status(db: AsyncSession = Depends(get_db)) -> dict:
+@_limiter.limit("30/minute")
+async def setup_status(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     result = await db.execute(select(User).where(User.role == "admin").limit(1))
     admin = result.scalar_one_or_none()
     return {"complete": admin is not None}
 
 
 @router.post("/complete")
-async def setup_complete(payload: SetupPayload, db: AsyncSession = Depends(get_db)) -> dict:
+@_limiter.limit("5/hour")
+async def setup_complete(request: Request, payload: SetupPayload, db: AsyncSession = Depends(get_db)) -> dict:
     result = await db.execute(select(User).where(User.role == "admin").limit(1))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Setup already complete")

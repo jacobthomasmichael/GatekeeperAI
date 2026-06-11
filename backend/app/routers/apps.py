@@ -1,6 +1,8 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +15,8 @@ from app.schemas.app_submission import AppCreate, AppResponse, RejectionFeedback
 from app.services.git_service import create_bare_repo, delete_bare_repo
 
 router = APIRouter(prefix="/apps", tags=["apps"])
+
+_limiter = Limiter(key_func=get_remote_address)
 
 
 async def _with_rejection(app: AppSubmission, db: AsyncSession) -> dict:
@@ -45,7 +49,9 @@ async def _with_rejection(app: AppSubmission, db: AsyncSession) -> dict:
 
 
 @router.post("/", response_model=AppResponse, status_code=status.HTTP_201_CREATED)
+@_limiter.limit("20/minute")
 async def create_app(
+    request: Request,
     payload: AppCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

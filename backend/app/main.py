@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,6 +11,8 @@ from app.config import settings
 from app.middleware.audit_middleware import AuditMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.routers import auth, apps, scans, approvals, deployments, secrets, setup
+
+_logger = logging.getLogger("gatekeeper.startup")
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -34,6 +38,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(AuditMiddleware)
+
+
+@app.on_event("startup")
+async def _validate_config() -> None:
+    issues = []
+    if len(settings.SECRET_KEY) < 32:
+        issues.append("SECRET_KEY is too short (must be ≥ 32 chars)")
+    if settings.SECRET_KEY in ("changeme", "secret", "dev", "development", ""):
+        issues.append("SECRET_KEY looks like a default/placeholder value")
+    if len(settings.SECRET_ENCRYPTION_KEY) < 32:
+        issues.append("SECRET_ENCRYPTION_KEY is too short (must be ≥ 32 chars)")
+    if settings.is_production and settings.ENVIRONMENT == "production":
+        if not settings.HOOK_SECRET:
+            issues.append("HOOK_SECRET is not set — git hook endpoints are unprotected")
+        if not settings.APP_BASE_URL.startswith("https://"):
+            issues.append("APP_BASE_URL should use https:// in production")
+    for issue in issues:
+        _logger.warning("SECURITY: %s", issue)
+
 
 API_PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=API_PREFIX)

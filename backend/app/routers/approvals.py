@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +23,8 @@ from app.schemas.approval import (
 from app.services import approval_service
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
+
+_limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/stats", response_model=ApprovalStats)
@@ -84,7 +88,9 @@ async def get_approval(
 
 
 @router.post("/{approval_id}/decide", response_model=ApprovalResponse)
+@_limiter.limit("30/minute")
 async def decide_approval(
+    request: Request,
     approval_id: uuid.UUID,
     payload: ApprovalDecide,
     current_user: User = Depends(require_approver),
