@@ -8,7 +8,7 @@ from slowapi.util import get_remote_address
 from app.config import settings
 from app.middleware.audit_middleware import AuditMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import auth, apps, scans, approvals, deployments, secrets
+from app.routers import auth, apps, scans, approvals, deployments, secrets, setup
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -42,6 +42,7 @@ app.include_router(scans.router, prefix=API_PREFIX)
 app.include_router(approvals.router, prefix=API_PREFIX)
 app.include_router(deployments.router, prefix=API_PREFIX)
 app.include_router(secrets.router, prefix=API_PREFIX)
+app.include_router(setup.router, prefix=API_PREFIX)
 
 
 @app.get("/health")
