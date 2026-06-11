@@ -99,6 +99,7 @@ async def decide_approval(
 
     scan = await db.get(Scan, approval.scan_id)
     submission = await db.get(AppSubmission, scan.submission_id)
+    submitter = await db.get(User, submission.submitter_id)
 
     await approval_service.process_decision(
         approval=approval,
@@ -107,6 +108,7 @@ async def decide_approval(
         approver_id=current_user.id,
         scan=scan,
         submission=submission,
+        submitter_email=submitter.email if submitter else "",
         db=db,
     )
 

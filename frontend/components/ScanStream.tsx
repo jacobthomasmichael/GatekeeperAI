@@ -31,12 +31,12 @@ const SCANNER_LABELS: Record<string, string> = {
 };
 
 const SEV_COLOR: Record<string, string> = {
-  critical: "text-red-400",
-  high: "text-orange-400",
-  medium: "text-amber-400",
-  low: "text-emerald-400",
-  none: "text-slate-400",
-  info: "text-slate-400",
+  critical: "text-red-600 dark:text-red-400",
+  high:     "text-orange-600 dark:text-orange-400",
+  medium:   "text-amber-600 dark:text-amber-400",
+  low:      "text-emerald-600 dark:text-emerald-400",
+  none:     "text-gray-400 dark:text-slate-400",
+  info:     "text-gray-400 dark:text-slate-400",
 };
 
 export default function ScanStream({ scanId, initialScan, onComplete }: Props) {
@@ -50,19 +50,15 @@ export default function ScanStream({ scanId, initialScan, onComplete }: Props) {
 
   useEffect(() => {
     if (done) return;
-
     const token = localStorage.getItem("gka_token");
     const url = scansApi.streamUrl(scanId);
-    const es = new EventSource(
-      token ? `${url}?token=${encodeURIComponent(token)}` : url
-    );
+    const es = new EventSource(token ? `${url}?token=${encodeURIComponent(token)}` : url);
     esRef.current = es;
 
     es.onmessage = async (e) => {
       try {
         const evt: ScanEvent = JSON.parse(e.data);
         setEvents((prev) => [...prev, evt]);
-
         if (evt.event === "complete" || evt.event === "error") {
           es.close();
           setDone(true);
@@ -74,7 +70,6 @@ export default function ScanStream({ scanId, initialScan, onComplete }: Props) {
     };
 
     es.onerror = () => es.close();
-
     return () => es.close();
   }, [scanId, done, onComplete]);
 
@@ -86,52 +81,46 @@ export default function ScanStream({ scanId, initialScan, onComplete }: Props) {
     <div className="space-y-6">
       {/* Status header */}
       <div className="flex items-center gap-4">
-        {!done && (
-          <div className="h-3 w-3 animate-pulse rounded-full bg-blue-400" />
-        )}
-        <span className="text-sm text-slate-400">
+        {!done && <div className="h-3 w-3 animate-pulse rounded-full bg-blue-400" />}
+        <span className="text-sm text-gray-500 dark:text-slate-400">
           {done ? "Scan complete" : "Scan in progress..."}
         </span>
-        {scan.risk_tier && (
-          <RiskBadge tier={scan.risk_tier} score={scan.risk_score} />
-        )}
+        {scan.risk_tier && <RiskBadge tier={scan.risk_tier} score={scan.risk_score} />}
       </div>
 
       {/* Live event log */}
       {events.length > 0 && (
-        <div className="rounded-lg border border-slate-800 bg-slate-950 p-4 font-mono text-xs space-y-1.5 max-h-64 overflow-y-auto">
+        <div className="rounded-lg border border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-4 font-mono text-xs space-y-1.5 max-h-64 overflow-y-auto">
           {events.map((evt, i) => (
             <div key={i} className="flex gap-3">
-              <span className="text-slate-600 select-none">{i + 1}</span>
+              <span className="text-gray-300 dark:text-slate-600 select-none">{i + 1}</span>
               <span
                 className={clsx(
-                  evt.event === "error" && "text-red-400",
-                  evt.event === "complete" && "text-emerald-400",
-                  evt.event === "scanner_complete" && "text-blue-400",
-                  evt.event === "started" && "text-slate-400",
-                  evt.event === "scanner_started" && "text-slate-500"
+                  evt.event === "error"            && "text-red-600 dark:text-red-400",
+                  evt.event === "complete"         && "text-emerald-600 dark:text-emerald-400",
+                  evt.event === "scanner_complete" && "text-blue-600 dark:text-blue-400",
+                  evt.event === "started"          && "text-gray-500 dark:text-slate-400",
+                  evt.event === "scanner_started"  && "text-gray-400 dark:text-slate-500"
                 )}
               >
                 [{evt.event}]
               </span>
               {evt.scanner && (
-                <span className="text-slate-300">
+                <span className="text-gray-700 dark:text-slate-300">
                   {SCANNER_LABELS[evt.scanner] ?? evt.scanner}
                 </span>
               )}
               {evt.severity && evt.severity !== "none" && (
-                <span className={SEV_COLOR[evt.severity] ?? "text-slate-400"}>
+                <span className={SEV_COLOR[evt.severity] ?? "text-gray-400 dark:text-slate-400"}>
                   {evt.severity}
                 </span>
               )}
               {evt.duration_ms && (
-                <span className="text-slate-600">{evt.duration_ms}ms</span>
+                <span className="text-gray-300 dark:text-slate-600">{evt.duration_ms}ms</span>
               )}
-              {evt.message && (
-                <span className="text-red-400">{evt.message}</span>
-              )}
+              {evt.message && <span className="text-red-600 dark:text-red-400">{evt.message}</span>}
               {evt.risk_tier && (
-                <span className="text-slate-300">
+                <span className="text-gray-700 dark:text-slate-300">
                   → {evt.risk_tier} (score: {evt.risk_score})
                 </span>
               )}
@@ -147,30 +136,25 @@ export default function ScanStream({ scanId, initialScan, onComplete }: Props) {
           {scan.scan_results.map((r) => (
             <div
               key={r.id}
-              className="rounded-lg border border-slate-800 bg-slate-900 p-4"
+              className="rounded-lg border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4"
             >
               <div className="flex items-start justify-between mb-2">
-                <span className="text-sm font-medium text-white capitalize">
+                <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">
                   {SCANNER_LABELS[r.scanner_name] ?? r.scanner_name}
                 </span>
-                <span
-                  className={clsx(
-                    "text-xs font-medium",
-                    SEV_COLOR[r.severity] ?? "text-slate-400"
-                  )}
-                >
+                <span className={clsx("text-xs font-medium", SEV_COLOR[r.severity] ?? "text-gray-400 dark:text-slate-400")}>
                   {r.severity}
                 </span>
               </div>
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-gray-400 dark:text-slate-500">
                 {r.duration_ms}ms &middot; {r.status}
               </div>
               {Object.keys(r.findings).length > 0 && (
                 <details className="mt-2">
-                  <summary className="text-xs text-indigo-400 cursor-pointer select-none">
+                  <summary className="text-xs text-indigo-600 dark:text-indigo-400 cursor-pointer select-none">
                     View findings
                   </summary>
-                  <pre className="mt-2 text-xs text-slate-400 whitespace-pre-wrap break-all overflow-auto max-h-32">
+                  <pre className="mt-2 text-xs text-gray-500 dark:text-slate-400 whitespace-pre-wrap break-all overflow-auto max-h-32">
                     {JSON.stringify(r.findings, null, 2)}
                   </pre>
                 </details>

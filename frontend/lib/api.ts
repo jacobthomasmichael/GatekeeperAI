@@ -62,6 +62,12 @@ export interface TokenResponse {
   token_type: string;
 }
 
+export interface RejectionFeedback {
+  decision: string;
+  comment: string;
+  decided_at: string;
+}
+
 export interface AppSubmission {
   id: string;
   name: string;
@@ -74,6 +80,7 @@ export interface AppSubmission {
   submitter_id: string;
   commit_sha: string | null;
   created_at: string;
+  rejection: RejectionFeedback | null;
 }
 
 export interface ScanResult {

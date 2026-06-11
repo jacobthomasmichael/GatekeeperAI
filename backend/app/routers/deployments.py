@@ -115,10 +115,14 @@ async def get_logs(
     deployment = await db.get(Deployment, deployment_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found")
-    if not deployment.container_id:
-        return {"logs": ""}
-    logs = container_service.get_container_logs(deployment.container_id, tail=tail)
-    return {"logs": logs}
+    if deployment.container_id:
+        try:
+            live = container_service.get_container_logs(deployment.container_id, tail=tail)
+            if live:
+                return {"logs": live}
+        except Exception:
+            pass
+    return {"logs": deployment.logs_cache or ""}
 
 
 @router.get("/{deployment_id}/status")

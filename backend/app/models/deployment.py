@@ -24,6 +24,7 @@ class Deployment(Base):
     public_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     allowed_egress_urls: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     env_vars_injected: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    logs_cache: Mapped[str | None] = mapped_column(String(65535), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

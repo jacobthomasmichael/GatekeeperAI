@@ -6,11 +6,42 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, get_current_user
 from app.models.app_submission import AppSubmission
+from app.models.approval import Approval
+from app.models.scan import Scan
 from app.models.user import User
-from app.schemas.app_submission import AppCreate, AppResponse
+from app.schemas.app_submission import AppCreate, AppResponse, RejectionFeedback
 from app.services.git_service import create_bare_repo, delete_bare_repo
 
 router = APIRouter(prefix="/apps", tags=["apps"])
+
+
+async def _with_rejection(app: AppSubmission, db: AsyncSession) -> dict:
+    """Build AppResponse dict, populating rejection feedback if the app was rejected."""
+    data = {c.name: getattr(app, c.name) for c in app.__table__.columns}
+    data["rejection"] = None
+
+    if app.status == "rejected":
+        scan_result = await db.execute(
+            select(Scan)
+            .where(Scan.submission_id == app.id)
+            .order_by(Scan.created_at.desc())
+            .limit(1)
+        )
+        scan = scan_result.scalar_one_or_none()
+        if scan:
+            approval_result = await db.execute(
+                select(Approval)
+                .where(Approval.scan_id == scan.id, Approval.decision == "rejected")
+                .limit(1)
+            )
+            approval = approval_result.scalar_one_or_none()
+            if approval:
+                data["rejection"] = RejectionFeedback(
+                    decision=approval.decision,
+                    comment=approval.comment or "",
+                    decided_at=approval.decided_at,
+                )
+    return data
 
 
 @router.post("/", response_model=AppResponse, status_code=status.HTTP_201_CREATED)
@@ -18,8 +49,7 @@ async def create_app(
     payload: AppCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> AppSubmission:
-    # Check name uniqueness per submitter
+) -> dict:
     existing = await db.execute(
         select(AppSubmission).where(
             AppSubmission.name == payload.name,
@@ -44,14 +74,14 @@ async def create_app(
     db.add(submission)
     await db.flush()
     await db.refresh(submission)
-    return submission
+    return await _with_rejection(submission, db)
 
 
 @router.get("/", response_model=list[AppResponse])
 async def list_apps(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> list[AppSubmission]:
+) -> list[dict]:
     if current_user.role in ("admin", "approver"):
         result = await db.execute(select(AppSubmission).order_by(AppSubmission.created_at.desc()))
     else:
@@ -60,7 +90,8 @@ async def list_apps(
             .where(AppSubmission.submitter_id == current_user.id)
             .order_by(AppSubmission.created_at.desc())
         )
-    return list(result.scalars().all())
+    apps = list(result.scalars().all())
+    return [await _with_rejection(app, db) for app in apps]
 
 
 @router.get("/{app_id}", response_model=AppResponse)
@@ -68,14 +99,14 @@ async def get_app(
     app_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> AppSubmission:
+) -> dict:
     result = await db.execute(select(AppSubmission).where(AppSubmission.id == app_id))
     app = result.scalar_one_or_none()
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
     if current_user.role == "ic" and app.submitter_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-    return app
+    return await _with_rejection(app, db)
 
 
 @router.get("/{app_id}/clone-url")

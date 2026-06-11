@@ -13,6 +13,15 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     APP_BASE_URL: str = "http://localhost"
 
+    # Email — all optional; if SMTP_HOST is unset, notifications log only
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "noreply@gatekeeper.local"
+    SMTP_USE_TLS: bool = True
+    APPROVER_EMAILS: str = ""  # comma-separated fallback list
+
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 

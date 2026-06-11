@@ -18,6 +18,12 @@ class AppCreate(BaseModel):
         return v
 
 
+class RejectionFeedback(BaseModel):
+    decision: str
+    comment: str
+    decided_at: datetime
+
+
 class AppResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -32,3 +38,4 @@ class AppResponse(BaseModel):
     commit_sha: Optional[str]
     created_at: datetime
     updated_at: datetime
+    rejection: Optional[RejectionFeedback] = None

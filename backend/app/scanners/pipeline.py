@@ -103,7 +103,7 @@ async def _run_with_session(scan_id: str, SessionLocal) -> None:
         with tempfile.TemporaryDirectory() as work_dir:
             try:
                 proc = subprocess.run(
-                    ["git", "archive", "--format=tar", "HEAD"],
+                    ["git", "archive", "--format=tar", scan.commit_sha],
                     cwd=submission.repo_path,
                     capture_output=True,
                     check=True,
