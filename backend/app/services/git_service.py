@@ -8,18 +8,18 @@ from app.config import settings
 _HOOK_TEMPLATE = """\
 #!/bin/bash
 # GatekeeperAI post-receive hook — do not edit manually
-PLATFORM_API="${{GATEKEEPER_API_URL:-http://localhost:8000}}"
+PLATFORM_API="{callback_url}"
 APP_ID="{app_id}"
 HOOK_SECRET="{hook_secret}"
 
 while read old_sha new_sha refname; do
     if [ "$refname" = "refs/heads/main" ]; then
         curl -sf -X POST \\
-            "${{PLATFORM_API}}/api/v1/scans/trigger/${{APP_ID}}" \\
+            "$PLATFORM_API/api/v1/scans/trigger/$APP_ID" \\
             -H "Content-Type: application/json" \\
-            -H "X-Hook-Secret: ${{HOOK_SECRET}}" \\
-            -d "{{\\\"commit_sha\\\": \\\"${{new_sha}}\\\"}}" || true
-        echo "GatekeeperAI: scan queued for commit ${{new_sha}}"
+            -H "X-Hook-Secret: $HOOK_SECRET" \\
+            -d "{{\\\"commit_sha\\\": \\\"$new_sha\\\"}}" || true
+        echo "GatekeeperAI: scan queued for commit $new_sha"
     fi
 done
 """
@@ -43,7 +43,11 @@ def create_bare_repo(app_name: str, app_id: str) -> tuple[str, str]:
     )
 
     hook_path = repo_dir / "hooks" / "post-receive"
-    hook_path.write_text(_HOOK_TEMPLATE.format(app_id=app_id, hook_secret=settings.HOOK_SECRET))
+    hook_path.write_text(_HOOK_TEMPLATE.format(
+        callback_url=settings.HOOK_CALLBACK_URL,
+        app_id=app_id,
+        hook_secret=settings.HOOK_SECRET,
+    ))
     hook_path.chmod(0o755)
 
     repo_url = f"file://{repo_dir}"

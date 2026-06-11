@@ -11,6 +11,7 @@ from app.models.app_submission import AppSubmission
 from app.models.approval import Approval
 from app.models.scan import Scan
 from app.models.user import User
+from app.config import settings
 from app.schemas.app_submission import AppCreate, AppResponse, RejectionFeedback
 from app.services.git_service import create_bare_repo, delete_bare_repo
 
@@ -127,7 +128,10 @@ async def get_clone_url(
         raise HTTPException(status_code=404, detail="App not found")
     if current_user.role == "ic" and app.submitter_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-    return {"clone_url": app.repo_url, "repo_path": app.repo_path}
+    from pathlib import Path
+    repo_name = Path(app.repo_path).name
+    ssh_url = f"ssh://git@{settings.GIT_SSH_HOST}:{settings.GIT_SSH_PORT}/git-repos/{repo_name}"
+    return {"clone_url": app.repo_url, "ssh_clone_url": ssh_url, "repo_path": app.repo_path}
 
 
 @router.delete("/{app_id}", status_code=status.HTTP_204_NO_CONTENT)

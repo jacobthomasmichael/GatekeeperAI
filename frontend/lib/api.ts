@@ -224,7 +224,7 @@ export const appsApi = {
   create: (name: string, description: string) =>
     api.post<AppSubmission>("/apps/", { name, description }),
   cloneUrl: (id: string) =>
-    api.get<{ clone_url: string; repo_path: string }>(`/apps/${id}/clone-url`),
+    api.get<{ clone_url: string; ssh_clone_url: string; repo_path: string }>(`/apps/${id}/clone-url`),
   delete: (id: string) => api.delete(`/apps/${id}`),
 };
 

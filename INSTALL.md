@@ -173,7 +173,74 @@ You're now logged in as the administrator. Bookmark **http://localhost:3000** fo
 
 ---
 
-## Step 7 — Starting GatekeeperAI in the future
+## Step 7 — Allow developers to push code
+
+GatekeeperAI includes a built-in Git server. When a developer pushes code to their app's repository, a security scan starts automatically — no extra tools required.
+
+### Part A — Add developer SSH public keys
+
+Each developer needs to add their SSH public key so the Git server recognises them.
+
+**Find your SSH public key** (run this on the developer's computer):
+
+```
+cat ~/.ssh/id_ed25519.pub
+```
+
+If the file doesn't exist, generate a key pair first:
+
+```
+ssh-keygen -t ed25519 -C "your.email@example.com"
+```
+
+**Add the public key to GatekeeperAI** (run this on the server, in the GatekeeperAI folder):
+
+```
+echo "ssh-ed25519 AAAA...rest-of-key..." >> infra/authorized_keys
+```
+
+Repeat for each developer. Changes take effect immediately — no restart needed.
+
+---
+
+### Part B — Connect a project to GatekeeperAI
+
+1. Log in as an IC (developer) and go to the **Dashboard**.
+2. Submit a new app by clicking **Submit App**.
+3. Once created, expand the app card — it shows the Git remote commands for that app.
+
+**New project:**
+
+```
+git clone ssh://git@<your-server>:2222/git-repos/<app-name>.git
+cd <app-name>
+# ... add your code ...
+git push origin main
+```
+
+**Existing project** (add GatekeeperAI as a second remote):
+
+```
+git remote add gatekeeper ssh://git@<your-server>:2222/git-repos/<app-name>.git
+git push gatekeeper main
+```
+
+Replace `<your-server>` with your server's IP address or hostname (e.g. `gatekeeper.acme.com`).
+The exact commands — with the real repository path — are shown in the dashboard.
+
+---
+
+### Part C — What happens after a push
+
+1. The developer pushes to the `main` branch.
+2. GatekeeperAI's Git server receives the push.
+3. The post-receive hook automatically calls the scan API.
+4. A new scan starts within seconds — the developer can watch progress in the Dashboard.
+5. Approvers are notified by email (if configured) once the scan completes.
+
+---
+
+## Step 8 — Starting GatekeeperAI in the future
 
 You don't need to go through the setup steps again. The next time you want to run GatekeeperAI:
 
@@ -185,6 +252,8 @@ docker compose -f infra/docker-compose.yml up
 ```
 
 (Note: no `--build` needed after the first time, unless you've downloaded an update.)
+
+Any SSH keys you added to `infra/authorized_keys` are preserved across restarts.
 
 ---
 

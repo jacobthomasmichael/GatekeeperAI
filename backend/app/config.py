@@ -15,6 +15,13 @@ class Settings(BaseSettings):
 
     # Post-receive hook — if set, trigger endpoint requires matching X-Hook-Secret header
     HOOK_SECRET: str = ""
+    # URL baked into the post-receive hook script so it can call back to the API.
+    # In Docker set this to http://api:8000; locally it stays http://localhost:8000.
+    HOOK_CALLBACK_URL: str = "http://localhost:8000"
+
+    # SSH git service — used to build the clone URL shown in the UI
+    GIT_SSH_HOST: str = "localhost"
+    GIT_SSH_PORT: int = 2222
 
     # Email — all optional; if SMTP_HOST is unset, notifications log only
     SMTP_HOST: str = ""

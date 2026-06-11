@@ -48,6 +48,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       GIT_REPOS_BASE_PATH: /git-repos
       ENVIRONMENT: ${ENVIRONMENT:-production}
+      HOOK_CALLBACK_URL: http://api:8000
+      GIT_SSH_HOST: ${GIT_SSH_HOST:-localhost}
+      GIT_SSH_PORT: ${GIT_SSH_PORT:-2222}
     volumes:
       - git_repos:/git-repos
       - ../.env:/app/.env  # bind-mount so setup wizard writes persist to host
@@ -108,6 +111,25 @@ services:
       - redis
     restart: unless-stopped
 
+  # ── SSH Git Service ───────────────────────────────────────────────────────────
+
+  git:
+    build:
+      context: ./git-service
+      dockerfile: Dockerfile
+    ports:
+      - "${GIT_SSH_PORT:-2222}:22"
+    environment:
+      GATEKEEPER_API_URL: http://api:8000
+    volumes:
+      - git_repos:/git-repos
+      - ./authorized_keys:/home/git/.ssh/authorized_keys:ro
+      - git_ssh_keys:/etc/ssh
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ── Frontend ──────────────────────────────────────────────────────────────────
 
   frontend:
@@ -127,3 +149,4 @@ volumes:
   postgres_data:
   redis_data:
   git_repos:
+  git_ssh_keys:

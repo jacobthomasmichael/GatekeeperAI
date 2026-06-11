@@ -152,9 +152,17 @@ export default function DashboardPage() {
 function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [copied, setCopied] = useState(false);
+  const [sshUrl, setSshUrl] = useState<string | null>(null);
 
-  const newProjectCmd = `git clone ${repoUrl}`;
-  const existingCmd = `git remote add gatekeeper ${repoUrl}`;
+  useEffect(() => {
+    import("@/lib/api").then(({ appsApi }) =>
+      appsApi.cloneUrl(appId).then((r) => setSshUrl(r.ssh_clone_url)).catch(() => {})
+    );
+  }, [appId]);
+
+  const remoteUrl = sshUrl ?? repoUrl;
+  const newProjectCmd = `git clone ${remoteUrl}`;
+  const existingCmd = `git remote add gatekeeper ${remoteUrl}`;
   const pushCmd = `git push gatekeeper main`;
 
   function copy(text: string) {
@@ -165,7 +173,6 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
 
   return (
     <div className="mt-3 space-y-2">
-      {/* Tab toggle */}
       <div className="flex gap-1">
         <button
           onClick={() => setMode("new")}
@@ -190,21 +197,26 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
       </div>
 
       {mode === "new" ? (
-        <div className="flex items-center gap-2">
-          <code className="flex-1 truncate rounded bg-gray-50 dark:bg-slate-950 px-3 py-1.5 text-xs text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-slate-800">
-            {newProjectCmd}
-          </code>
-          <button
-            onClick={() => copy(newProjectCmd)}
-            className="rounded border border-gray-200 dark:border-slate-700 px-2.5 py-1.5 text-xs text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shrink-0"
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
+        <div className="space-y-1.5">
+          <p className="text-xs text-gray-400 dark:text-slate-500">
+            Clone and start pushing — scans trigger automatically on each push to main.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 truncate rounded bg-gray-50 dark:bg-slate-950 px-3 py-1.5 text-xs text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-slate-800">
+              {newProjectCmd}
+            </code>
+            <button
+              onClick={() => copy(newProjectCmd)}
+              className="rounded border border-gray-200 dark:border-slate-700 px-2.5 py-1.5 text-xs text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shrink-0"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-1.5">
           <p className="text-xs text-gray-400 dark:text-slate-500">
-            Add GatekeeperAI as a second remote in your existing repo:
+            Add GatekeeperAI as a remote — each push to main triggers a scan automatically.
           </p>
           {[existingCmd, pushCmd].map((cmd) => (
             <div key={cmd} className="flex items-center gap-2">
