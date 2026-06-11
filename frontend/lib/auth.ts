@@ -1,19 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { authApi, type User } from "./api";
+import { authApi, storeTokens, clearTokens, getAccessToken, AUTH_EXPIRED_EVENT, type User } from "./api";
 
-const TOKEN_KEY = "gka_token";
 const USER_KEY = "gka_user";
-
-export function setToken(token: string) {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearAuth() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-}
 
 export function getStoredUser(): User | null {
   if (typeof window === "undefined") return null;
@@ -26,13 +16,21 @@ export function getStoredUser(): User | null {
   }
 }
 
+function clearStoredUser() {
+  localStorage.removeItem(USER_KEY);
+}
+
+export function clearAuth() {
+  clearTokens();
+  clearStoredUser();
+}
+
 export function useAuth() {
   const [user, setUser] = useState<User | null>(getStoredUser);
   const [loading, setLoading] = useState(!getStoredUser());
 
-  const refresh = useCallback(async () => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) {
+  const fetchMe = useCallback(async () => {
+    if (!getAccessToken()) {
       setUser(null);
       setLoading(false);
       return;
@@ -50,16 +48,26 @@ export function useAuth() {
   }, []);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    fetchMe();
+  }, [fetchMe]);
+
+  // Force-logout when the refresh token is exhausted
+  useEffect(() => {
+    const handler = () => {
+      clearStoredUser();
+      setUser(null);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, handler);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handler);
+  }, []);
 
   const login = useCallback(
     async (email: string, password: string) => {
       const tokens = await authApi.login(email, password);
-      setToken(tokens.access_token);
-      await refresh();
+      storeTokens(tokens.access_token, tokens.refresh_token);
+      await fetchMe();
     },
-    [refresh]
+    [fetchMe]
   );
 
   const logout = useCallback(() => {
@@ -67,5 +75,5 @@ export function useAuth() {
     setUser(null);
   }, []);
 
-  return { user, loading, login, logout, refresh };
+  return { user, loading, login, logout, refresh: fetchMe };
 }

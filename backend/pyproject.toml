@@ -59,6 +59,7 @@ pytest-asyncio = "^0.23.8"
 pytest-cov = "^5.0.0"
 fakeredis = "^2.35.1"
 factory-boy = "^3.3.1"
+because-py = "*"
 
 [build-system]
 requires = ["poetry-core"]

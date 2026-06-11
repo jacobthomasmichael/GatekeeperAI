@@ -6,25 +6,86 @@ export class ApiError extends Error {
   }
 }
 
-function token(): string | null {
+// ── Token storage ─────────────────────────────────────────────────────────────
+
+const TOKEN_KEY = "gka_token";
+const REFRESH_KEY = "gka_refresh_token";
+
+export function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("gka_token");
+  return localStorage.getItem(TOKEN_KEY);
 }
 
-async function request<T>(
-  method: string,
-  path: string,
-  body?: unknown
-): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const t = token();
-  if (t) headers["Authorization"] = `Bearer ${t}`;
+export function storeTokens(access: string, refresh: string) {
+  localStorage.setItem(TOKEN_KEY, access);
+  localStorage.setItem(REFRESH_KEY, refresh);
+}
 
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+export function clearTokens() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+}
+
+// Emitted when a refresh attempt fails — auth context listens and logs the user out.
+export const AUTH_EXPIRED_EVENT = "gka:auth-expired";
+
+// ── Refresh lock ──────────────────────────────────────────────────────────────
+
+let refreshing: Promise<string | null> | null = null;
+
+async function attemptRefresh(): Promise<string | null> {
+  if (refreshing) return refreshing;
+
+  refreshing = (async () => {
+    const rt = typeof window !== "undefined" ? localStorage.getItem(REFRESH_KEY) : null;
+    if (!rt) return null;
+    try {
+      const res = await fetch(`${BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: rt }),
+      });
+      if (!res.ok) return null;
+      const data: { access_token: string; refresh_token: string } = await res.json();
+      storeTokens(data.access_token, data.refresh_token);
+      return data.access_token;
+    } catch {
+      return null;
+    } finally {
+      refreshing = null;
+    }
+  })();
+
+  return refreshing;
+}
+
+// ── Core fetch ────────────────────────────────────────────────────────────────
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const doFetch = (accessToken: string | null) => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+    return fetch(`${BASE}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  };
+
+  let res = await doFetch(getAccessToken());
+
+  if (res.status === 401) {
+    const newToken = await attemptRefresh();
+    if (newToken) {
+      res = await doFetch(newToken);
+    } else {
+      clearTokens();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+      }
+      throw new ApiError(401, "Session expired. Please log in again.");
+    }
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -42,6 +103,7 @@ async function request<T>(
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
+  patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   delete: <T>(path: string) => request<T>("DELETE", path),
 };
 
@@ -191,6 +253,7 @@ export const approvalsApi = {
 
 export const deploymentsApi = {
   list: () => api.get<Deployment[]>("/deployments/"),
+  get: (deploymentId: string) => api.get<Deployment>(`/deployments/${deploymentId}`),
   getForApp: (submissionId: string) =>
     api.get<Deployment>(`/deployments/app/${submissionId}`),
   status: (deploymentId: string) =>
@@ -199,4 +262,54 @@ export const deploymentsApi = {
     ),
   logs: (deploymentId: string, tail = 200) =>
     api.get<{ logs: string }>(`/deployments/${deploymentId}/logs?tail=${tail}`),
+  stop: (deploymentId: string) =>
+    api.post<Deployment>(`/deployments/${deploymentId}/stop`),
+  start: (deploymentId: string) =>
+    api.post<Deployment>(`/deployments/${deploymentId}/start`),
+};
+
+// ── Secrets API ───────────────────────────────────────────────────────────────
+
+export interface SecretKey {
+  key_name: string;
+  submission_id: string;
+}
+
+export const secretsApi = {
+  list: (appId: string) => api.get<SecretKey[]>(`/apps/${appId}/secrets/`),
+  create: (appId: string, key_name: string, value: string) =>
+    api.post<SecretKey>(`/apps/${appId}/secrets/`, { key_name, value }),
+  delete: (appId: string, keyName: string) =>
+    api.delete<void>(`/apps/${appId}/secrets/${keyName}`),
+};
+
+// ── Admin API ─────────────────────────────────────────────────────────────────
+
+export interface AuditLogEntry {
+  id: number;
+  actor_id: string | null;
+  actor_email: string | null;
+  action: string;
+  resource_type: string | null;
+  resource_id: string | null;
+  metadata: Record<string, unknown> | null;
+  ip_address: string | null;
+  created_at: string;
+}
+
+export interface AuditLogPage {
+  total: number;
+  page: number;
+  page_size: number;
+  items: AuditLogEntry[];
+}
+
+export const adminApi = {
+  listUsers: () => api.get<User[]>("/admin/users"),
+  createUser: (payload: { email: string; username: string; password: string; role: string }) =>
+    api.post<User>("/admin/users", payload),
+  updateUser: (id: string, patch: { role?: string; is_active?: boolean }) =>
+    api.patch<User>(`/admin/users/${id}`, patch),
+  listAuditLogs: (page = 1, pageSize = 50) =>
+    api.get<AuditLogPage>(`/admin/audit-logs?page=${page}&page_size=${pageSize}`),
 };

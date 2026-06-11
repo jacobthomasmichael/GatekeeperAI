@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { appsApi, scansApi, type AppSubmission, type Scan } from "@/lib/api";
+import SecretsManager from "@/components/SecretsManager";
 import RiskBadge from "@/components/RiskBadge";
 import StatusBadge from "@/components/StatusBadge";
 import { PlusCircle, GitBranch, ExternalLink } from "lucide-react";
@@ -137,6 +138,9 @@ export default function DashboardPage() {
 
               {/* Clone URL */}
               <CloneUrl appId={app.id} repoUrl={app.repo_url} />
+
+              {/* Secrets */}
+              <SecretsManager appId={app.id} />
             </div>
           );
         })}
