@@ -220,4 +220,118 @@ Ask your IT team to open ports **3000** (web) and **8000** (API) on the server's
 
 ---
 
+## Hosting in the cloud
+
+Running GatekeeperAI on a cloud server means your whole team can access it from anywhere, and you don't have to leave a computer on at your office. The steps below cover the three most common cloud providers. **You will need a credit card on file with the cloud provider** — the server sizes recommended below cost roughly $30–$60 per month.
+
+For all three options, the process is the same high-level flow:
+1. Create a virtual server (they each have a different name for it).
+2. Connect to it and install Docker.
+3. Follow Steps 2–6 from this guide as if it were a regular computer.
+
+---
+
+### Amazon Web Services (AWS)
+
+**What you're creating:** A virtual server called an **EC2 instance**.
+
+1. Log in to the **[AWS Console](https://console.aws.amazon.com)** and search for **EC2** in the top search bar.
+2. Click **Launch Instance**.
+3. Give it a name (e.g. `GatekeeperAI`).
+4. Under **Application and OS Images**, choose **Ubuntu Server 24.04 LTS** (it will say "Free tier eligible" for small sizes, but choose a larger one for real use).
+5. Under **Instance type**, choose **t3.medium** (2 CPUs, 4 GB RAM) — this is the minimum recommended size.
+6. Under **Key pair**, click **Create new key pair**, give it a name, and download the file. **Keep this file safe** — it is your password to the server.
+7. Under **Network settings**, check the boxes to allow **SSH**, **HTTP**, and **HTTPS** traffic.
+8. Click **Launch Instance** and wait about 2 minutes for it to start.
+9. Click on your new instance, find the **Public IPv4 address**, and copy it.
+10. Connect to the server by opening your terminal and running (replace `your-key.pem` and `1.2.3.4` with your actual file name and IP address):
+    ```
+    ssh -i your-key.pem ubuntu@1.2.3.4
+    ```
+11. Once connected, install Docker by running these two commands one at a time:
+    ```
+    curl -fsSL https://get.docker.com | sh
+    sudo usermod -aG docker ubuntu
+    ```
+12. Log out and log back in (`exit`, then reconnect with the same `ssh` command).
+13. Now follow **Steps 2–6** from this guide. When you reach Step 6, open your browser to `http://1.2.3.4:3000` (using your server's IP address instead of `localhost`).
+14. Update your `.env` file to use your server's address:
+    ```
+    APP_BASE_URL=http://1.2.3.4
+    NEXT_PUBLIC_API_URL=http://1.2.3.4:8000/api/v1
+    ```
+
+> **Tip:** For a permanent web address (like `gatekeeper.yourcompany.com`), ask your IT team to point a domain name at the server's IP address and set up an SSL certificate. AWS also offers this through a service called **Route 53**.
+
+---
+
+### Microsoft Azure
+
+**What you're creating:** A virtual server called a **Virtual Machine (VM)**.
+
+1. Log in to the **[Azure Portal](https://portal.azure.com)** and click **Create a resource**.
+2. Search for **Virtual Machine** and click **Create**.
+3. Fill in the basics:
+   - **Resource group:** Click "Create new" and give it a name (e.g. `gatekeeperai-rg`).
+   - **Virtual machine name:** `GatekeeperAI`
+   - **Region:** Choose the one closest to your office.
+   - **Image:** Select **Ubuntu Server 24.04 LTS**.
+   - **Size:** Click "See all sizes" and choose **Standard_B2s** (2 CPUs, 4 GB RAM).
+4. Under **Administrator account**, choose **SSH public key**. Azure will generate a key for you — click **Download private key** when prompted and save the file.
+5. Under **Inbound port rules**, select **Allow selected ports** and check **SSH (22)**, **HTTP (80)**, and **HTTPS (443)**. Also add a custom rule for port **3000** and **8000**.
+6. Click **Review + create**, then **Create**. Wait a few minutes for the VM to deploy.
+7. Once deployed, click **Go to resource** and find the **Public IP address**.
+8. Connect to the server in your terminal (replace `your-key.pem` and `1.2.3.4`):
+    ```
+    ssh -i your-key.pem azureuser@1.2.3.4
+    ```
+9. Install Docker:
+    ```
+    curl -fsSL https://get.docker.com | sh
+    sudo usermod -aG docker azureuser
+    ```
+10. Log out and back in, then follow **Steps 2–6** from this guide, opening your browser to `http://1.2.3.4:3000`.
+11. Update your `.env` file:
+    ```
+    APP_BASE_URL=http://1.2.3.4
+    NEXT_PUBLIC_API_URL=http://1.2.3.4:8000/api/v1
+    ```
+
+> **Tip:** For a custom domain name, Azure offers **Azure DNS** and **App Service Managed Certificates** for free SSL. Ask your IT team to configure these after the initial setup is working.
+
+---
+
+### Google Cloud Platform (GCP)
+
+**What you're creating:** A virtual server called a **Compute Engine VM instance**.
+
+1. Log in to the **[Google Cloud Console](https://console.cloud.google.com)** and select or create a project from the top dropdown.
+2. In the left menu, go to **Compute Engine → VM instances**.
+3. Click **Create Instance**.
+4. Configure the instance:
+   - **Name:** `gatekeeperai`
+   - **Region:** Choose the one closest to your office.
+   - **Machine type:** Under "General purpose," choose **e2-medium** (2 CPUs, 4 GB RAM).
+   - **Boot disk:** Click **Change**, select **Ubuntu 24.04 LTS**, and set the disk size to at least **20 GB**.
+5. Under **Firewall**, check both **Allow HTTP traffic** and **Allow HTTPS traffic**.
+6. Click **Create** and wait about a minute.
+7. On the VM instances page, click the **SSH** button next to your new instance. A browser-based terminal will open — no key file needed.
+8. In that terminal, install Docker:
+    ```
+    curl -fsSL https://get.docker.com | sh
+    sudo usermod -aG docker $USER
+    ```
+9. Close the browser terminal, re-open it by clicking **SSH** again, then follow **Steps 2–6** from this guide.
+10. Find your server's **External IP** on the VM instances page. Open your browser to `http://your-external-ip:3000`.
+11. Update your `.env` file:
+    ```
+    APP_BASE_URL=http://your-external-ip
+    NEXT_PUBLIC_API_URL=http://your-external-ip:8000/api/v1
+    ```
+12. To allow ports 3000 and 8000 through the firewall, go to **VPC Network → Firewall** in the left menu, click **Create Firewall Rule**, and add rules for TCP ports **3000** and **8000** with source `0.0.0.0/0`.
+
+> **Tip:** Google Cloud offers free managed SSL certificates through **Google-managed certificates** when paired with a load balancer. Ask your IT team about setting this up once the app is confirmed working.
+
+---
+
 *Questions or issues? Open a support ticket at [github.com/jacobthomasmichael/GatekeeperAI/issues](https://github.com/jacobthomasmichael/GatekeeperAI/issues).*
