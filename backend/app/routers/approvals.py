@@ -21,6 +21,7 @@ from app.schemas.approval import (
     ScanResultSummary,
 )
 from app.services import approval_service
+from app.services.log_forwarder import forward_audit_event
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -131,6 +132,22 @@ async def decide_approval(
             "comment": payload.comment,
         },
     ))
+
+    forward_audit_event({
+        "event_type": "security_event",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": "gatekeeperai",
+        "action": f"approval.{payload.decision}",
+        "actor_id": str(current_user.id),
+        "actor_email": current_user.email,
+        "resource_type": "approval",
+        "resource_id": str(approval_id),
+        "metadata": {
+            "app_name": submission.name,
+            "risk_tier": scan.risk_tier,
+            "comment": payload.comment,
+        },
+    })
 
     await db.flush()
     await db.refresh(approval)

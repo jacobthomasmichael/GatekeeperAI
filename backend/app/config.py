@@ -35,6 +35,18 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
+    # Log forwarding — all optional; only active sinks need to be set
+    LOG_FORWARD_WEBHOOK_URL: str = ""
+    LOG_FORWARD_SYSLOG_HOST: str = ""
+    LOG_FORWARD_SYSLOG_PORT: int = 514
+    LOG_FORWARD_SYSLOG_PROTOCOL: str = "UDP"  # "UDP" or "TCP"
+    LOG_FORWARD_LOKI_URL: str = ""            # e.g. http://loki:3100/loki/api/v1/push
+    LOG_FORWARD_CLOUDWATCH_LOG_GROUP: str = ""
+    LOG_FORWARD_CLOUDWATCH_LOG_STREAM: str = "gatekeeperai"
+    LOG_FORWARD_CLOUDWATCH_REGION: str = "us-east-1"
+    LOG_FORWARD_CLOUDWATCH_ACCESS_KEY: str = ""
+    LOG_FORWARD_CLOUDWATCH_SECRET_KEY: str = ""
+
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
@@ -43,6 +55,7 @@ class Settings(BaseSettings):
 _SENSITIVE = {
     "SECRET_KEY", "SECRET_ENCRYPTION_KEY", "ANTHROPIC_API_KEY",
     "SMTP_PASSWORD", "HOOK_SECRET",
+    "LOG_FORWARD_CLOUDWATCH_ACCESS_KEY", "LOG_FORWARD_CLOUDWATCH_SECRET_KEY",
 }
 
 

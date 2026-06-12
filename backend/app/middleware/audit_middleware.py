@@ -1,8 +1,11 @@
+from datetime import datetime, timezone
+
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.database import AsyncSessionLocal
 from app.models.audit_log import AuditLog
+from app.services.log_forwarder import forward_audit_event
 
 _SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
 
@@ -33,18 +36,29 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
         action = f"{request.method.lower()}.{request.url.path.strip('/').replace('/', '.')}"
         ip = request.client.host if request.client else None
+        actor_id = _extract_sub(request.headers.get("Authorization"))
 
         try:
             async with AsyncSessionLocal() as session:
                 log = AuditLog(
                     action=action,
                     ip_address=ip,
-                    actor_id=_extract_sub(request.headers.get("Authorization")),
+                    actor_id=actor_id,
                     metadata_={"status_code": response.status_code},
                 )
                 session.add(log)
                 await session.commit()
         except Exception:
             pass  # never let audit logging break a real request
+
+        forward_audit_event({
+            "event_type": "http_audit",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": "gatekeeperai",
+            "action": action,
+            "actor_id": str(actor_id) if actor_id else None,
+            "ip_address": ip,
+            "metadata": {"status_code": response.status_code},
+        })
 
         return response
