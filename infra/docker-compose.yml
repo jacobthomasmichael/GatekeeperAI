@@ -123,7 +123,7 @@ services:
       GATEKEEPER_API_URL: http://api:8000
     volumes:
       - git_repos:/git-repos
-      - ./authorized_keys:/home/git/.ssh/authorized_keys:ro
+      - ./authorized_keys:/home/git/.ssh/authorized_keys
       - git_ssh_keys:/etc/ssh
     depends_on:
       api:
