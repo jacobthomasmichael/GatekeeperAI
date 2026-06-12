@@ -14,8 +14,7 @@ GatekeeperAI — Product Prospectus
   - Shadow IT — the app runs on someone's laptop, accessed via a shared link, with no logging,
    no access control, no audit trail                        
   - IT ticket — 6-18 months to get a proper deployment, by which point the need has passed    
-  - Retool / Internal.io / Superblocks — powerful, but requires rewriting the app in a proprietary component
-   system                                                                                     
+  - Retool / Internal.io — powerful, but requires rewriting the app in a proprietary component system                                                                                     
                                                                                               
   CISOs know shadow IT is happening. They can't stop it. They can only wait for it to become a
    breach.                                                  
