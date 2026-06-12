@@ -1,8 +1,24 @@
+# Secrets
+*.pem
+*.key
+*.p12
+*.pfx
+
 # Python
 __pycache__/
 *.py[cod]
 .venv/
 *.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# macOS / editor
+.DS_Store
+.idea/
+.vscode/
 
 # Git repos (runtime data, not source)
 infra/git-repos/*/
