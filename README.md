@@ -49,10 +49,17 @@ See **[INSTALL.md](./INSTALL.md)** for full setup instructions, including local 
 ```bash
 cp .env.example .env
 # Fill in SECRET_KEY, SECRET_ENCRYPTION_KEY, and ANTHROPIC_API_KEY in .env
-docker compose -f infra/docker-compose.yml up --build
+docker compose -f infra/docker-compose.yml pull
+docker compose -f infra/docker-compose.yml up -d
 ```
 
-Then open `http://localhost:3000` and follow the setup wizard.
+Pre-built images are pulled from GitHub Container Registry — no compilation required. Then open `http://localhost:3000` and follow the setup wizard.
+
+**To build from source instead:**
+
+```bash
+docker compose -f infra/docker-compose.yml up --build
+```
 
 ---
 

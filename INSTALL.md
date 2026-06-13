@@ -142,20 +142,27 @@ Save the file (`Command+S` on Mac, `Ctrl+S` on Windows) and close the text edito
 
 ## Step 5 — Start GatekeeperAI
 
-In your terminal (still in the GatekeeperAI folder), run:
+In your terminal (still in the GatekeeperAI folder), run these two commands:
 
 ```
-docker compose -f infra/docker-compose.yml up --build
+docker compose -f infra/docker-compose.yml pull
+docker compose -f infra/docker-compose.yml up -d
 ```
 
-This command downloads all the required components and starts the application. **The first time you run this, it may take 5–15 minutes** depending on your internet speed. You'll see a lot of text scrolling — that's normal.
+The first command downloads the pre-built GatekeeperAI images from the internet. **This may take 2–5 minutes** depending on your connection speed. The second command starts everything up in the background.
 
-The app is ready when you see a line that says something like:
+To check that everything started correctly, run:
+
 ```
-frontend  | ▲ Next.js ready on http://0.0.0.0:3000
+docker compose -f infra/docker-compose.yml ps
 ```
 
-> To stop GatekeeperAI at any time, press `Ctrl + C` in the terminal window.
+All services should show **Up** or **healthy** in the Status column.
+
+> To stop GatekeeperAI at any time, run:
+> ```
+> docker compose -f infra/docker-compose.yml down
+> ```
 
 ---
 
@@ -248,10 +255,15 @@ You don't need to go through the setup steps again. The next time you want to ru
 2. Open your terminal, navigate to the GatekeeperAI folder, and run:
 
 ```
-docker compose -f infra/docker-compose.yml up
+docker compose -f infra/docker-compose.yml up -d
 ```
 
-(Note: no `--build` needed after the first time, unless you've downloaded an update.)
+**To update to the latest version**, run `pull` first to download any new images, then restart:
+
+```
+docker compose -f infra/docker-compose.yml pull
+docker compose -f infra/docker-compose.yml up -d
+```
 
 Any SSH keys you added to `infra/authorized_keys` are preserved across restarts.
 
@@ -546,10 +558,11 @@ APP_BASE_URL=https://gatekeeper.yourcompany.com
 NEXT_PUBLIC_API_URL=https://gatekeeper.yourcompany.com/api/v1
 ```
 
-Then rebuild and restart GatekeeperAI:
+Then restart GatekeeperAI:
 
 ```
-docker compose -f infra/docker-compose.yml up --build -d
+docker compose -f infra/docker-compose.yml pull
+docker compose -f infra/docker-compose.yml up -d
 ```
 
 The `-d` flag runs it in the background so it keeps running after you close the terminal.

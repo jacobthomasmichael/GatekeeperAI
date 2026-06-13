@@ -35,10 +35,10 @@ services:
   # ── Backend API ───────────────────────────────────────────────────────────────
 
   api:
+    image: ${BACKEND_IMAGE:-ghcr.io/jacobthomasmichael/gatekeeperai-backend:latest}
     build:
       context: ../backend
       dockerfile: Dockerfile
-    image: gatekeeperai-backend:latest
     ports:
       - "8000:8000"
     env_file:
@@ -74,7 +74,7 @@ services:
   # ── Celery Worker ─────────────────────────────────────────────────────────────
 
   worker:
-    image: gatekeeperai-backend:latest
+    image: ${BACKEND_IMAGE:-ghcr.io/jacobthomasmichael/gatekeeperai-backend:latest}
     build:
       context: ../backend
       dockerfile: Dockerfile
@@ -97,7 +97,7 @@ services:
   # ── Celery Beat ───────────────────────────────────────────────────────────────
 
   beat:
-    image: gatekeeperai-backend:latest
+    image: ${BACKEND_IMAGE:-ghcr.io/jacobthomasmichael/gatekeeperai-backend:latest}
     build:
       context: ../backend
       dockerfile: Dockerfile
@@ -134,6 +134,7 @@ services:
   # ── Frontend ──────────────────────────────────────────────────────────────────
 
   frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/jacobthomasmichael/gatekeeperai-frontend:latest}
     build:
       context: ../frontend
       dockerfile: Dockerfile
