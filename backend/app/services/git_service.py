@@ -54,6 +54,62 @@ def create_bare_repo(app_name: str, app_id: str) -> tuple[str, str]:
     return str(repo_dir), repo_url
 
 
+def push_zip_to_repo(repo_path: str, zip_bytes: bytes) -> str:
+    """Extract zip_bytes into a new commit on the bare repo's main branch.
+
+    Uses git-fetch (not git-push) so the post-receive hook does not fire —
+    the caller is responsible for queuing the scan.  Returns the commit SHA.
+    """
+    import io
+    import zipfile
+    import tempfile
+
+    _MAX_ZIP = 50 * 1024 * 1024        # 50 MB compressed
+    _MAX_EXTRACT = 200 * 1024 * 1024   # 200 MB uncompressed
+
+    if len(zip_bytes) > _MAX_ZIP:
+        raise ValueError("ZIP file exceeds 50 MB")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp) / "work"
+        work.mkdir()
+
+        # Throwaway working repo
+        subprocess.run(["git", "init", str(work)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(work), "symbolic-ref", "HEAD", "refs/heads/main"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(work), "config", "user.email", "upload@gatekeeperai"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(work), "config", "user.name", "GatekeeperAI"], check=True, capture_output=True)
+
+        # Extract with security checks
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            if sum(i.file_size for i in zf.infolist()) > _MAX_EXTRACT:
+                raise ValueError("ZIP content exceeds 200 MB limit")
+            for info in zf.infolist():
+                if info.filename.startswith("/") or ".." in info.filename:
+                    raise ValueError(f"Unsafe path in ZIP: {info.filename!r}")
+            zf.extractall(str(work))
+
+        # Commit
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(work), "commit", "-m", "Upload via GatekeeperAI web interface"],
+            check=True, capture_output=True,
+        )
+
+        sha = subprocess.run(
+            ["git", "-C", str(work), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+        # Fetch objects into bare repo — does NOT fire post-receive
+        subprocess.run(
+            ["git", "--git-dir", repo_path, "fetch", str(work), "main:refs/heads/main"],
+            check=True, capture_output=True,
+        )
+
+        return sha
+
+
 def delete_bare_repo(repo_path: str) -> None:
     path = Path(repo_path)
     if path.exists():

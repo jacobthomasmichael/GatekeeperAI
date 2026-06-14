@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { appsApi, scansApi, type AppSubmission, type Scan } from "@/lib/api";
 import SecretsManager from "@/components/SecretsManager";
 import RiskBadge from "@/components/RiskBadge";
@@ -150,9 +151,13 @@ export default function DashboardPage() {
 }
 
 function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
-  const [mode, setMode] = useState<"new" | "existing">("new");
+  const router = useRouter();
+  const [mode, setMode] = useState<"upload" | "new" | "existing">("upload");
   const [copied, setCopied] = useState(false);
   const [sshUrl, setSshUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     import("@/lib/api").then(({ appsApi }) =>
@@ -171,32 +176,69 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
     setTimeout(() => setCopied(false), 1500);
   }
 
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const { appsApi } = await import("@/lib/api");
+      const { scan_id } = await appsApi.uploadZip(appId, file);
+      router.push(`/dashboard/scans/${scan_id}`);
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+      setUploading(false);
+    }
+  }
+
+  const tabClass = (t: typeof mode) =>
+    `rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+      mode === t
+        ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"
+        : "text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
+    }`;
+
   return (
     <div className="mt-3 space-y-2">
       <div className="flex gap-1">
-        <button
-          onClick={() => setMode("new")}
-          className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-            mode === "new"
-              ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"
-              : "text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
-          }`}
-        >
-          New project
-        </button>
-        <button
-          onClick={() => setMode("existing")}
-          className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-            mode === "existing"
-              ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"
-              : "text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
-          }`}
-        >
-          Existing repo
-        </button>
+        <button onClick={() => setMode("upload")} className={tabClass("upload")}>Upload ZIP</button>
+        <button onClick={() => setMode("new")} className={tabClass("new")}>New project</button>
+        <button onClick={() => setMode("existing")} className={tabClass("existing")}>Existing repo</button>
       </div>
 
-      {mode === "new" ? (
+      {mode === "upload" && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-400 dark:text-slate-500">
+            Compress your app folder into a <code>.zip</code> file and upload it here — no git required.
+          </p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".zip"
+            className="hidden"
+            onChange={handleUpload}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-2 rounded-md border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-950/40 px-3 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {uploading ? (
+              <>
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                Uploading & scanning…
+              </>
+            ) : (
+              "Choose ZIP file"
+            )}
+          </button>
+          {uploadError && (
+            <p className="text-xs text-red-500">{uploadError}</p>
+          )}
+        </div>
+      )}
+
+      {mode === "new" && (
         <div className="space-y-1.5">
           <p className="text-xs text-gray-400 dark:text-slate-500">
             Clone and start pushing — scans trigger automatically on each push to main.
@@ -213,7 +255,9 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
             </button>
           </div>
         </div>
-      ) : (
+      )}
+
+      {mode === "existing" && (
         <div className="space-y-1.5">
           <p className="text-xs text-gray-400 dark:text-slate-500">
             Add GatekeeperAI as a remote — each push to main triggers a scan automatically.

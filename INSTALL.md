@@ -180,70 +180,62 @@ You're now logged in as the administrator. Bookmark **http://localhost:3000** fo
 
 ---
 
-## Step 7 — Allow developers to push code
+## Step 7 — Submit your first app
 
-GatekeeperAI includes a built-in Git server. When a developer pushes code to their app's repository, a security scan starts automatically — no extra tools required.
+There are two ways to submit an app to GatekeeperAI. Most users should start with the ZIP upload — it requires no technical setup at all.
 
-### Part A — Add developer SSH public keys
+---
 
-Each developer needs to add their SSH public key so the Git server recognises them.
+### Option A — Upload a ZIP file (recommended for most users)
 
-**Find your SSH public key** (run this on the developer's computer):
+This is the simplest path. No git, no SSH keys, no terminal required.
+
+1. Log in and click **Submit App** in the dashboard.
+2. Give your app a name and description, then click **Create**.
+3. On the app card, click **Upload ZIP**.
+4. Compress your app folder into a `.zip` file:
+   - **Mac:** Right-click your folder → **Compress**
+   - **Windows:** Right-click your folder → **Send to → Compressed (zipped) folder**
+5. Select the ZIP file. GatekeeperAI will upload it and start the scan automatically.
+
+You'll be taken to the scan progress page — the results are usually ready within a minute.
+
+---
+
+### Option B — Push via Git (for developers)
+
+If you prefer to use git, GatekeeperAI includes a built-in Git server. Pushing to main triggers a scan automatically.
+
+**First, add your SSH public key to the server** (run this on the developer's computer):
 
 ```
 cat ~/.ssh/id_ed25519.pub
 ```
 
-If the file doesn't exist, generate a key pair first:
+If the file doesn't exist, generate one first:
 
 ```
 ssh-keygen -t ed25519 -C "your.email@example.com"
 ```
 
-**Add the public key to GatekeeperAI** (run this on the server, in the GatekeeperAI folder):
+Then add the public key to GatekeeperAI (run this on the server, in the GatekeeperAI folder):
 
 ```
 echo "ssh-ed25519 AAAA...rest-of-key..." >> infra/authorized_keys
 ```
 
-Repeat for each developer. Changes take effect immediately — no restart needed.
+**Connect your project:**
+
+The exact git commands — with the real repository URL — are shown in the dashboard under the app card. Choose **New project** or **Existing repo** depending on your situation.
 
 ---
 
-### Part B — Connect a project to GatekeeperAI
+### What happens after submission
 
-1. Log in as an IC (developer) and go to the **Dashboard**.
-2. Submit a new app by clicking **Submit App**.
-3. Once created, expand the app card — it shows the Git remote commands for that app.
-
-**New project:**
-
-```
-git clone ssh://git@<your-server>:2222/git-repos/<app-name>.git
-cd <app-name>
-# ... add your code ...
-git push origin main
-```
-
-**Existing project** (add GatekeeperAI as a second remote):
-
-```
-git remote add gatekeeper ssh://git@<your-server>:2222/git-repos/<app-name>.git
-git push gatekeeper main
-```
-
-Replace `<your-server>` with your server's IP address or hostname (e.g. `gatekeeper.acme.com`).
-The exact commands — with the real repository path — are shown in the dashboard.
-
----
-
-### Part C — What happens after a push
-
-1. The developer pushes to the `main` branch.
-2. GatekeeperAI's Git server receives the push.
-3. The post-receive hook automatically calls the scan API.
-4. A new scan starts within seconds — the developer can watch progress in the Dashboard.
-5. Approvers are notified by email (if configured) once the scan completes.
+1. The app code is received by GatekeeperAI.
+2. An automatic scan starts within seconds — checking for passwords, exposed data, vulnerable packages, and more.
+3. The developer can watch scan progress live in the Dashboard.
+4. Approvers are notified once the scan completes and a decision is needed.
 
 ---
 

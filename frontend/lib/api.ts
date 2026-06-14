@@ -225,6 +225,23 @@ export const appsApi = {
     api.post<AppSubmission>("/apps/", { name, description }),
   cloneUrl: (id: string) =>
     api.get<{ clone_url: string; ssh_clone_url: string; repo_path: string }>(`/apps/${id}/clone-url`),
+  uploadZip: async (id: string, file: File): Promise<{ scan_id: string; commit_sha: string }> => {
+    const token = getAccessToken();
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/apps/${id}/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      let detail = text;
+      try { detail = JSON.parse(text)?.detail ?? text; } catch {}
+      throw new ApiError(res.status, detail);
+    }
+    return res.json();
+  },
   delete: (id: string) => api.delete(`/apps/${id}`),
 };
 
