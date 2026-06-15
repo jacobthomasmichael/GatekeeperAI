@@ -50,4 +50,4 @@ The following are out of scope:
 
 ## Thank You
 
-We appreciate the security community's efforts in responsibly disclosing vulnerabilities. Your work helps keep GatekeeperAI and its users safe.
+I appreciate the security community's efforts in responsibly disclosing vulnerabilities. Your work helps keep GatekeeperAI and its users safe.
