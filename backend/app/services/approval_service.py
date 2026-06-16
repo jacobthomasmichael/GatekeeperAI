@@ -20,7 +20,8 @@ _RISK_ORDER = {"green": 0, "yellow": 1, "red": 2}
 
 
 def _is_same_or_lower_risk(new_tier: str | None, previous_tier: str | None) -> bool:
-    return _RISK_ORDER.get(new_tier or "", 99) <= _RISK_ORDER.get(previous_tier or "", 0)
+    # unknown previous tier (-1) means we can never claim the new version is "same or lower"
+    return _RISK_ORDER.get(new_tier or "", 99) <= _RISK_ORDER.get(previous_tier or "", -1)
 
 
 async def _approver_emails(db: AsyncSession) -> list[str]:
