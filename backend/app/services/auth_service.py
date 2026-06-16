@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -9,6 +10,7 @@ from app.config import settings
 
 ALGORITHM = "HS256"
 _REFRESH_KEY_PREFIX = "refresh_jti:"
+logger = logging.getLogger(__name__)
 
 
 def hash_password(password: str) -> str:
@@ -49,8 +51,8 @@ def store_refresh_jti(jti: str, user_id: str) -> None:
         r = _redis()
         r.setex(f"{_REFRESH_KEY_PREFIX}{jti}", ttl, user_id)
         r.close()
-    except Exception:
-        pass  # Redis unavailable — rotation degrades gracefully
+    except Exception as exc:
+        logger.warning("Redis unavailable — refresh token rotation disabled: %s", exc)
 
 
 def consume_refresh_jti(jti: str) -> str | None:
@@ -58,13 +60,11 @@ def consume_refresh_jti(jti: str) -> str | None:
     try:
         r = _redis()
         key = f"{_REFRESH_KEY_PREFIX}{jti}"
-        pipe = r.pipeline()
-        pipe.get(key)
-        pipe.delete(key)
-        results = pipe.execute()
+        value = r.getdel(key)
         r.close()
-        return results[0]  # user_id stored at key, or None
-    except Exception:
+        return value
+    except Exception as exc:
+        logger.warning("Redis unavailable — cannot consume refresh JTI: %s", exc)
         return None
 
 

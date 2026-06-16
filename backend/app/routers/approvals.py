@@ -97,7 +97,10 @@ async def decide_approval(
     current_user: User = Depends(require_approver),
     db: AsyncSession = Depends(get_db),
 ) -> Approval:
-    result = await db.execute(select(Approval).where(Approval.id == approval_id))
+    # Lock the row so concurrent requests can't both see decision=None
+    result = await db.execute(
+        select(Approval).where(Approval.id == approval_id).with_for_update()
+    )
     approval = result.scalar_one_or_none()
     if not approval:
         raise HTTPException(status_code=404, detail="Approval not found")
@@ -108,7 +111,7 @@ async def decide_approval(
     submission = await db.get(AppSubmission, scan.submission_id)
     submitter = await db.get(User, submission.submitter_id)
 
-    await approval_service.process_decision(
+    should_deploy = await approval_service.process_decision(
         approval=approval,
         decision=payload.decision,
         comment=payload.comment,
@@ -149,7 +152,14 @@ async def decide_approval(
         },
     })
 
-    await db.flush()
+    # Commit before dispatching the Celery task so the worker never reads
+    # uncommitted data.
+    await db.commit()
+
+    if should_deploy:
+        from worker.deploy_task import deploy_approved_app
+        deploy_approved_app.delay(str(approval.id))
+
     await db.refresh(approval)
     return approval
 

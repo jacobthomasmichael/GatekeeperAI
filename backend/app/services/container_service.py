@@ -1,4 +1,5 @@
 import logging
+import threading
 from pathlib import Path
 
 import docker
@@ -6,6 +7,7 @@ from docker.errors import DockerException, NotFound
 from docker.models.containers import Container
 
 logger = logging.getLogger(__name__)
+_port_lock = threading.Lock()
 
 _DEFAULT_MEMORY = "512m"
 _DEFAULT_CPU = 0.5  # cpus quota
@@ -89,14 +91,19 @@ def get_container_logs(container_id: str, tail: int = 200) -> str:
 
 
 def pick_external_port(base: int = 8600) -> int:
-    """Find the next unused port starting from base."""
+    """Find the next unused port starting from base.
+
+    The threading lock prevents two concurrent calls within the same process
+    from racing to the same port. Cross-process races (multiple Celery workers)
+    are handled by the docker-start error path in deploy_task.
+    """
     import socket
-    port = base
-    while port < 9000:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("0.0.0.0", port))
-                return port
-            except OSError:
-                port += 1
+    with _port_lock:
+        for port in range(base, 9000):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                try:
+                    s.bind(("0.0.0.0", port))
+                    return port
+                except OSError:
+                    continue
     raise RuntimeError("No free ports available in range 8600-9000")

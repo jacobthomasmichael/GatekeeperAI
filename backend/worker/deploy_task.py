@@ -1,5 +1,6 @@
 import asyncio
 import io
+import logging
 import re
 import subprocess
 import tarfile
@@ -7,6 +8,8 @@ import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
@@ -75,7 +78,7 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
                     check=True,
                 )
                 with tarfile.open(fileobj=io.BytesIO(proc.stdout)) as tar:
-                    tar.extractall(work_dir)
+                    tar.extractall(work_dir, filter="data")
             except subprocess.CalledProcessError as e:
                 await _fail(db, deployment, submission, f"git archive failed: {e.stderr.decode()}")
                 return
@@ -145,10 +148,6 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
                 await _fail(db, deployment, submission, f"docker run failed: {e}")
                 return
 
-            # New container is up — now safely stop the old one
-            if old_container_id:
-                container_service.stop_container(old_container_id)
-
             public_url = f"{settings.APP_BASE_URL}:{external_port}"
 
             deployment.container_id = container.id
@@ -162,12 +161,28 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
             deployment.env_vars_injected = {k: "***" for k in secrets}
 
             submission.status = "deployed"
-            await db.commit()
+
+            # Commit before stopping the old container. If the commit fails we
+            # stop the new container (old is still running) to avoid a leak.
+            try:
+                await db.commit()
+            except Exception as exc:
+                logger.error(
+                    "DB commit failed after container start, stopping new container to avoid leak: %s", exc
+                )
+                try:
+                    container_service.stop_container(container.id)
+                except Exception:
+                    pass
+                raise
+
+            # DB committed — now safely tear down the old container
+            if old_container_id:
+                container_service.stop_container(old_container_id)
 
 
 async def _fail(db, deployment: Deployment, submission: AppSubmission, reason: str) -> None:
-    import logging
-    logging.getLogger(__name__).error("Deploy failed: %s", reason)
+    logger.error("Deploy failed: %s", reason)
     deployment.status = "failed"
     # Updates revert to deployed (old version still live); initial deploys revert to approved for retry
     from app.models.scan import Scan as _Scan

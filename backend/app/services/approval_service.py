@@ -100,17 +100,22 @@ async def process_decision(
     submission: "AppSubmission",
     submitter_email: str,
     db: AsyncSession,
-) -> None:
-    """Record the approver's decision and update submission status."""
+) -> bool:
+    """Record the approver's decision and update submission status.
+
+    Returns True if the caller should dispatch a deploy task after committing.
+    The caller is responsible for committing and dispatching so the task never
+    runs against uncommitted data.
+    """
     approval.decision = decision
     approval.comment = comment
     approval.approver_id = approver_id
     approval.decided_at = datetime.now(timezone.utc)
 
+    should_deploy = False
     if decision == "approved":
         submission.status = "approved"
-        from worker.deploy_task import deploy_approved_app
-        deploy_approved_app.delay(str(approval.id))
+        should_deploy = True
     else:
         # Update rejections leave the existing live version running
         if scan.scan_type == "update":
@@ -124,3 +129,4 @@ async def process_decision(
         decision=decision,
         comment=comment,
     )
+    return should_deploy
