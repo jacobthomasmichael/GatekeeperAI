@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, func
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Boolean, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,6 +18,12 @@ class Scan(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
     risk_tier: Mapped[str | None] = mapped_column(String(10), nullable=True)  # green | yellow | red
     risk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # initial | update
+    scan_type: Mapped[str] = mapped_column(String(10), nullable=False, default="initial")
+    # for updates: the last approved scan this version is replacing
+    previous_scan_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("scans.id"), nullable=True)
+    # true when update risk is same or lower than previous approved version
+    is_expedited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     celery_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -1,5 +1,8 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +17,14 @@ if TYPE_CHECKING:
     from app.models.app_submission import AppSubmission
 
 _YELLOW_RED_SLA_HOURS = 24
+_EXPEDITED_SLA_HOURS = 4
+
+_RISK_ORDER = {"green": 0, "yellow": 1, "red": 2}
+
+
+def _is_same_or_lower_risk(new_tier: str | None, previous_tier: str | None) -> bool:
+    # unknown previous tier (-1) means we can never claim the new version is "same or lower"
+    return _RISK_ORDER.get(new_tier or "", 99) <= _RISK_ORDER.get(previous_tier or "", -1)
 
 
 async def _approver_emails(db: AsyncSession) -> list[str]:
@@ -39,11 +50,30 @@ async def route_after_scan(
     submission: "AppSubmission",
     db: AsyncSession,
 ) -> Approval | None:
-    """Create an Approval record for Yellow/Red scans; no-op for Green."""
-    if scan.risk_tier == "green":
+    """Create an Approval record after a scan completes.
+
+    - Green initial scans: no approval needed (auto-deploy path).
+    - Update scans with same/lower risk: expedited approval (4hr SLA).
+    - All other yellow/red scans: standard approval (24hr SLA).
+    """
+    # Determine if this update qualifies for expedited review
+    if scan.scan_type == "update":
+        if scan.previous_scan_id:
+            prev = await db.get(Scan, scan.previous_scan_id)
+            if prev and _is_same_or_lower_risk(scan.risk_tier, prev.risk_tier):
+                scan.is_expedited = True
+        else:
+            logger.warning(
+                "Update scan %s has no previous_scan_id; cannot determine expedited eligibility",
+                scan.id,
+            )
+
+    # Green initial scans skip the queue entirely
+    if scan.risk_tier == "green" and scan.scan_type == "initial":
         return None
 
-    deadline = datetime.now(timezone.utc) + timedelta(hours=_YELLOW_RED_SLA_HOURS)
+    sla_hours = _EXPEDITED_SLA_HOURS if scan.is_expedited else _YELLOW_RED_SLA_HOURS
+    deadline = datetime.now(timezone.utc) + timedelta(hours=sla_hours)
     approval = Approval(scan_id=scan.id, sla_deadline=deadline)
     db.add(approval)
     await db.flush()
@@ -70,19 +100,28 @@ async def process_decision(
     submission: "AppSubmission",
     submitter_email: str,
     db: AsyncSession,
-) -> None:
-    """Record the approver's decision and update submission status."""
+) -> bool:
+    """Record the approver's decision and update submission status.
+
+    Returns True if the caller should dispatch a deploy task after committing.
+    The caller is responsible for committing and dispatching so the task never
+    runs against uncommitted data.
+    """
     approval.decision = decision
     approval.comment = comment
     approval.approver_id = approver_id
     approval.decided_at = datetime.now(timezone.utc)
 
+    should_deploy = False
     if decision == "approved":
         submission.status = "approved"
-        from worker.deploy_task import deploy_approved_app
-        deploy_approved_app.delay(str(approval.id))
+        should_deploy = True
     else:
-        submission.status = "rejected"
+        # Update rejections leave the existing live version running
+        if scan.scan_type == "update":
+            submission.status = "deployed"
+        else:
+            submission.status = "rejected"
 
     notification_service.notify_submitter_decision(
         submitter_email=submitter_email,
@@ -90,3 +129,4 @@ async def process_decision(
         decision=decision,
         comment=comment,
     )
+    return should_deploy

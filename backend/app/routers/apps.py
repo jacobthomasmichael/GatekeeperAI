@@ -23,11 +23,15 @@ _limiter = Limiter(key_func=get_remote_address)
 
 
 async def _with_rejection(app: AppSubmission, db: AsyncSession) -> dict:
-    """Build AppResponse dict, populating rejection feedback if the app was rejected."""
+    """Build AppResponse dict, populating rejection feedback if the most recent scan was rejected.
+
+    Checks both outright rejected apps and deployed apps whose most recent UPDATE was rejected
+    (status stays 'deployed' after an update rejection, but we still surface the feedback).
+    """
     data = {c.name: getattr(app, c.name) for c in app.__table__.columns}
     data["rejection"] = None
 
-    if app.status == "rejected":
+    if app.status in ("rejected", "deployed"):
         scan_result = await db.execute(
             select(Scan)
             .where(Scan.submission_id == app.id)
@@ -164,7 +168,27 @@ async def upload_zip(
     except subprocess.CalledProcessError:
         raise HTTPException(status_code=500, detail="Failed to process ZIP — ensure the archive contains valid files")
 
-    scan = Scan(submission_id=app_id, commit_sha=commit_sha, status="queued")
+    # detect if this is an update to an already-deployed app
+    is_update = app.status == "deployed"
+    previous_scan_id = None
+    if is_update:
+        prev_result = await db.execute(
+            select(Scan)
+            .join(Approval, Approval.scan_id == Scan.id)
+            .where(Scan.submission_id == app_id, Approval.decision == "approved")
+            .order_by(Approval.decided_at.desc())
+            .limit(1)
+        )
+        prev_scan = prev_result.scalar_one_or_none()
+        previous_scan_id = prev_scan.id if prev_scan else None
+
+    scan = Scan(
+        submission_id=app_id,
+        commit_sha=commit_sha,
+        status="queued",
+        scan_type="update" if is_update else "initial",
+        previous_scan_id=previous_scan_id,
+    )
     db.add(scan)
     app.commit_sha = commit_sha
     app.status = "scanning"

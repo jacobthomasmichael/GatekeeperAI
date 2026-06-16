@@ -109,7 +109,7 @@ async def _run_with_session(scan_id: str, SessionLocal) -> None:
                     check=True,
                 )
                 with tarfile.open(fileobj=io.BytesIO(proc.stdout)) as tar:
-                    tar.extractall(work_dir)
+                    tar.extractall(work_dir, filter="data")
             except subprocess.CalledProcessError as e:
                 await _fail_scan(db, scan, submission, f"git archive failed: {e.stderr.decode()}")
                 return
@@ -171,11 +171,28 @@ async def _run_with_session(scan_id: str, SessionLocal) -> None:
             else:
                 submission.status = "awaiting_approval"
 
-            # Create approval record for Yellow/Red
+            # Create approval record for Yellow/Red (returns None for green initial)
             from app.services.approval_service import route_after_scan
             await route_after_scan(scan, submission, db)
 
             await db.commit()
+
+            # Green initial scans skip the manual approval queue — auto-approve and deploy
+            if scan.risk_tier == "green" and scan.scan_type == "initial":
+                from app.models.approval import Approval
+                from worker.deploy_task import deploy_approved_app
+                auto_approval = Approval(
+                    scan_id=scan.id,
+                    decision="approved",
+                    decided_at=datetime.now(timezone.utc),
+                    sla_deadline=datetime.now(timezone.utc),
+                    comment="Auto-approved: green risk tier",
+                )
+                db.add(auto_approval)
+                await db.flush()
+                await db.refresh(auto_approval)
+                await db.commit()
+                deploy_approved_app.delay(str(auto_approval.id))
 
         _publish(scan_id, {
             "event": "complete",
@@ -188,6 +205,7 @@ async def _run_with_session(scan_id: str, SessionLocal) -> None:
 async def _fail_scan(db, scan: Scan, submission: AppSubmission, reason: str) -> None:
     scan.status = "failed"
     scan.completed_at = datetime.now(timezone.utc)
-    submission.status = "failed"
+    # Update scans that fail leave the existing live version running
+    submission.status = "deployed" if scan.scan_type == "update" else "failed"
     await db.commit()
     _publish(str(scan.id), {"event": "error", "message": reason})
