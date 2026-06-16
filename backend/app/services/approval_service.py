@@ -14,6 +14,13 @@ if TYPE_CHECKING:
     from app.models.app_submission import AppSubmission
 
 _YELLOW_RED_SLA_HOURS = 24
+_EXPEDITED_SLA_HOURS = 4
+
+_RISK_ORDER = {"green": 0, "yellow": 1, "red": 2}
+
+
+def _is_same_or_lower_risk(new_tier: str | None, previous_tier: str | None) -> bool:
+    return _RISK_ORDER.get(new_tier or "", 99) <= _RISK_ORDER.get(previous_tier or "", 0)
 
 
 async def _approver_emails(db: AsyncSession) -> list[str]:
@@ -39,11 +46,24 @@ async def route_after_scan(
     submission: "AppSubmission",
     db: AsyncSession,
 ) -> Approval | None:
-    """Create an Approval record for Yellow/Red scans; no-op for Green."""
-    if scan.risk_tier == "green":
+    """Create an Approval record after a scan completes.
+
+    - Green initial scans: no approval needed (auto-deploy path).
+    - Update scans with same/lower risk: expedited approval (4hr SLA).
+    - All other yellow/red scans: standard approval (24hr SLA).
+    """
+    # Determine if this update qualifies for expedited review
+    if scan.scan_type == "update" and scan.previous_scan_id:
+        prev = await db.get(Scan, scan.previous_scan_id)
+        if prev and _is_same_or_lower_risk(scan.risk_tier, prev.risk_tier):
+            scan.is_expedited = True
+
+    # Green initial scans skip the queue entirely
+    if scan.risk_tier == "green" and scan.scan_type == "initial":
         return None
 
-    deadline = datetime.now(timezone.utc) + timedelta(hours=_YELLOW_RED_SLA_HOURS)
+    sla_hours = _EXPEDITED_SLA_HOURS if scan.is_expedited else _YELLOW_RED_SLA_HOURS
+    deadline = datetime.now(timezone.utc) + timedelta(hours=sla_hours)
     approval = Approval(scan_id=scan.id, sla_deadline=deadline)
     db.add(approval)
     await db.flush()

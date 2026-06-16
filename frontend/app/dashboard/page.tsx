@@ -7,7 +7,7 @@ import { appsApi, scansApi, type AppSubmission, type Scan } from "@/lib/api";
 import SecretsManager from "@/components/SecretsManager";
 import RiskBadge from "@/components/RiskBadge";
 import StatusBadge from "@/components/StatusBadge";
-import { PlusCircle, GitBranch, ExternalLink } from "lucide-react";
+import { PlusCircle, GitBranch, ExternalLink, RefreshCw } from "lucide-react";
 
 export default function DashboardPage() {
   const [apps, setApps] = useState<AppSubmission[]>([]);
@@ -113,6 +113,9 @@ export default function DashboardPage() {
                       <ExternalLink size={12} />
                       Scan Report
                     </Link>
+                  )}
+                  {app.status === "deployed" && (
+                    <UpdateAppButton appId={app.id} />
                   )}
                 </div>
               </div>
@@ -277,6 +280,42 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function UpdateAppButton({ appId }: { appId: string }) {
+  const router = useRouter();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setUploading(true);
+    try {
+      const { scan_id } = await appsApi.uploadZip(appId, file);
+      router.push(`/dashboard/scans/${scan_id}`);
+    } catch {
+      setError("Upload failed — please try again.");
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div>
+      <input ref={fileRef} type="file" accept=".zip" className="hidden" onChange={handleFile} />
+      <button
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        className="flex items-center gap-1.5 rounded-md border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 text-xs text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors disabled:opacity-50"
+      >
+        <RefreshCw size={12} className={uploading ? "animate-spin" : ""} />
+        {uploading ? "Uploading…" : "Update App"}
+      </button>
+      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
     </div>
   );
 }

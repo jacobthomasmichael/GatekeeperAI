@@ -164,7 +164,27 @@ async def upload_zip(
     except subprocess.CalledProcessError:
         raise HTTPException(status_code=500, detail="Failed to process ZIP — ensure the archive contains valid files")
 
-    scan = Scan(submission_id=app_id, commit_sha=commit_sha, status="queued")
+    # detect if this is an update to an already-deployed app
+    is_update = app.status == "deployed"
+    previous_scan_id = None
+    if is_update:
+        prev_result = await db.execute(
+            select(Scan)
+            .join(Approval, Approval.scan_id == Scan.id)
+            .where(Scan.submission_id == app_id, Approval.decision == "approved")
+            .order_by(Approval.decided_at.desc())
+            .limit(1)
+        )
+        prev_scan = prev_result.scalar_one_or_none()
+        previous_scan_id = prev_scan.id if prev_scan else None
+
+    scan = Scan(
+        submission_id=app_id,
+        commit_sha=commit_sha,
+        status="queued",
+        scan_type="update" if is_update else "initial",
+        previous_scan_id=previous_scan_id,
+    )
     db.add(scan)
     app.commit_sha = commit_sha
     app.status = "scanning"

@@ -84,10 +84,9 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
             dockerfile_content = dockerfile_service.generate_dockerfile(submission.detected_type)
             Path(work_dir, "Dockerfile").write_text(dockerfile_content)
 
-            # Build image
+            # Build image (old container stays live during this step)
             safe_name = re.sub(r"[^a-z0-9_-]", "-", submission.name.lower())
             image_tag = f"gatekeeperai/{safe_name}:{scan.commit_sha[:8] if scan.commit_sha else 'latest'}"
-            container_name = f"gka-{safe_name}-{str(submission.id)[:8]}"
 
             try:
                 container_service.build_image(work_dir, image_tag)
@@ -99,15 +98,32 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
             from app.services.secrets_service import decrypt_all
             secrets = await decrypt_all(str(submission.id), db)
 
-            # Pick port
             internal_port = _port_for_type(submission.detected_type)
-            try:
-                external_port = container_service.pick_external_port()
-            except RuntimeError as e:
-                await _fail(db, deployment, submission, str(e))
-                return
+            is_update = scan.scan_type == "update" and submission.stable_external_port is not None
 
-            # Start container
+            if is_update:
+                # Blue-green swap: stop old container, reuse stable port and name
+                external_port = submission.stable_external_port
+                container_name = submission.stable_container_name
+                old_container_id = deployment.container_id
+                if old_container_id:
+                    container_service.stop_container(old_container_id)
+                # clear unique constraint fields before reuse
+                deployment.container_id = None
+                deployment.container_name = None
+                await db.flush()
+            else:
+                # First deployment: pick a port and persist it as stable
+                try:
+                    external_port = container_service.pick_external_port()
+                except RuntimeError as e:
+                    await _fail(db, deployment, submission, str(e))
+                    return
+                container_name = f"gka-{safe_name}-{str(submission.id)[:8]}"
+                submission.stable_external_port = external_port
+                submission.stable_container_name = container_name
+
+            # Start new container
             try:
                 container = container_service.start_container(
                     image_tag=image_tag,
@@ -130,6 +146,7 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
             deployment.internal_port = internal_port
             deployment.external_port = external_port
             deployment.public_url = public_url
+            deployment.scan_id = scan.id
             deployment.env_vars_injected = {k: "***" for k in secrets}
 
             submission.status = "deployed"

@@ -181,5 +181,7 @@ async def _build_detail(approval: Approval, db: AsyncSession) -> dict:
         "commit_sha": scan.commit_sha,
         "risk_tier": scan.risk_tier,
         "risk_score": scan.risk_score,
+        "scan_type": scan.scan_type,
+        "is_expedited": scan.is_expedited,
         "scan_results": scan_results,
     }

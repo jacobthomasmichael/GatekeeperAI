@@ -23,5 +23,8 @@ class AppSubmission(Base):
     risk_tier: Mapped[str | None] = mapped_column(String(10), nullable=True)  # green | yellow | red
     allowed_users: Mapped[list[uuid.UUID] | None] = mapped_column(ARRAY(PG_UUID(as_uuid=True)), nullable=True)
     commit_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # set at first deployment, reused for all updates to keep URL stable
+    stable_external_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stable_container_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

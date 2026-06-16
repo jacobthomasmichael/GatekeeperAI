@@ -181,6 +181,8 @@ export interface ApprovalDetail {
   commit_sha: string;
   risk_tier: string;
   risk_score: number;
+  scan_type: string;
+  is_expedited: boolean;
   scan_results: ScanResult[];
 }
 
