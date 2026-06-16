@@ -23,11 +23,15 @@ _limiter = Limiter(key_func=get_remote_address)
 
 
 async def _with_rejection(app: AppSubmission, db: AsyncSession) -> dict:
-    """Build AppResponse dict, populating rejection feedback if the app was rejected."""
+    """Build AppResponse dict, populating rejection feedback if the most recent scan was rejected.
+
+    Checks both outright rejected apps and deployed apps whose most recent UPDATE was rejected
+    (status stays 'deployed' after an update rejection, but we still surface the feedback).
+    """
     data = {c.name: getattr(app, c.name) for c in app.__table__.columns}
     data["rejection"] = None
 
-    if app.status == "rejected":
+    if app.status in ("rejected", "deployed"):
         scan_result = await db.execute(
             select(Scan)
             .where(Scan.submission_id == app.id)

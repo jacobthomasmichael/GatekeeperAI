@@ -99,19 +99,18 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
             secrets = await decrypt_all(str(submission.id), db)
 
             internal_port = _port_for_type(submission.detected_type)
+
+            # Backfill stable port/name for apps deployed before this feature shipped
+            if scan.scan_type == "update" and submission.stable_external_port is None and deployment.external_port:
+                submission.stable_external_port = deployment.external_port
+                submission.stable_container_name = deployment.container_name
+
             is_update = scan.scan_type == "update" and submission.stable_external_port is not None
 
             if is_update:
-                # Blue-green swap: stop old container, reuse stable port and name
                 external_port = submission.stable_external_port
                 container_name = submission.stable_container_name
                 old_container_id = deployment.container_id
-                if old_container_id:
-                    container_service.stop_container(old_container_id)
-                # clear unique constraint fields before reuse
-                deployment.container_id = None
-                deployment.container_name = None
-                await db.flush()
             else:
                 # First deployment: pick a port and persist it as stable
                 try:
@@ -122,8 +121,14 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
                 container_name = f"gka-{safe_name}-{str(submission.id)[:8]}"
                 submission.stable_external_port = external_port
                 submission.stable_container_name = container_name
+                old_container_id = None
 
-            # Start new container
+            # Start new container FIRST — old container stays live until this succeeds
+            # Clear unique DB fields before starting so Docker name/ID don't conflict
+            deployment.container_id = None
+            deployment.container_name = None
+            await db.flush()
+
             try:
                 container = container_service.start_container(
                     image_tag=image_tag,
@@ -134,8 +139,15 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
                     allowed_egress_urls=deployment.allowed_egress_urls or [],
                 )
             except Exception as e:
+                # New container failed to start — old container is still running, restore DB
+                deployment.container_id = old_container_id
+                deployment.container_name = container_name if not is_update else deployment.container_name
                 await _fail(db, deployment, submission, f"docker run failed: {e}")
                 return
+
+            # New container is up — now safely stop the old one
+            if old_container_id:
+                container_service.stop_container(old_container_id)
 
             public_url = f"{settings.APP_BASE_URL}:{external_port}"
 
@@ -157,7 +169,14 @@ async def _fail(db, deployment: Deployment, submission: AppSubmission, reason: s
     import logging
     logging.getLogger(__name__).error("Deploy failed: %s", reason)
     deployment.status = "failed"
-    submission.status = "approved"  # revert to approved so it can be retried
+    # Updates revert to deployed (old version still live); initial deploys revert to approved for retry
+    from app.models.scan import Scan as _Scan
+    from sqlalchemy import select as _select
+    scan_row = (await db.execute(_select(_Scan).where(_Scan.id == deployment.scan_id))).scalar_one_or_none()
+    if scan_row and scan_row.scan_type == "update":
+        submission.status = "deployed"
+    else:
+        submission.status = "approved"
     await db.commit()
 
 

@@ -1,5 +1,8 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,10 +57,16 @@ async def route_after_scan(
     - All other yellow/red scans: standard approval (24hr SLA).
     """
     # Determine if this update qualifies for expedited review
-    if scan.scan_type == "update" and scan.previous_scan_id:
-        prev = await db.get(Scan, scan.previous_scan_id)
-        if prev and _is_same_or_lower_risk(scan.risk_tier, prev.risk_tier):
-            scan.is_expedited = True
+    if scan.scan_type == "update":
+        if scan.previous_scan_id:
+            prev = await db.get(Scan, scan.previous_scan_id)
+            if prev and _is_same_or_lower_risk(scan.risk_tier, prev.risk_tier):
+                scan.is_expedited = True
+        else:
+            logger.warning(
+                "Update scan %s has no previous_scan_id; cannot determine expedited eligibility",
+                scan.id,
+            )
 
     # Green initial scans skip the queue entirely
     if scan.risk_tier == "green" and scan.scan_type == "initial":
@@ -103,7 +112,11 @@ async def process_decision(
         from worker.deploy_task import deploy_approved_app
         deploy_approved_app.delay(str(approval.id))
     else:
-        submission.status = "rejected"
+        # Update rejections leave the existing live version running
+        if scan.scan_type == "update":
+            submission.status = "deployed"
+        else:
+            submission.status = "rejected"
 
     notification_service.notify_submitter_decision(
         submitter_email=submitter_email,

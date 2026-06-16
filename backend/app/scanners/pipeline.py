@@ -188,6 +188,7 @@ async def _run_with_session(scan_id: str, SessionLocal) -> None:
 async def _fail_scan(db, scan: Scan, submission: AppSubmission, reason: str) -> None:
     scan.status = "failed"
     scan.completed_at = datetime.now(timezone.utc)
-    submission.status = "failed"
+    # Update scans that fail leave the existing live version running
+    submission.status = "deployed" if scan.scan_type == "update" else "failed"
     await db.commit()
     _publish(str(scan.id), {"event": "error", "message": reason})
