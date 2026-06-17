@@ -1,5 +1,7 @@
 # GatekeeperAI
 
+**Website:** [gatekeeperai.io](https://www.gatekeeperai.io) · **Support:** [jacob@gatekeeperai.io](mailto:jacob@gatekeeperai.io)
+
 GatekeeperAI is an on-premises platform that lets enterprise teams safely adopt third-party and internal AI applications. Every app goes through automated security scanning, human approval, and sandboxed container deployment before any user can access it.
 
 ---
@@ -89,3 +91,5 @@ New users are created by an admin — there is no public self-registration.
 ## Stuck on something?
 
 If you hit a wall during install or setup, please [open an issue](https://github.com/jacobthomasmichael/GatekeeperAI/issues/new?template=bug_report.md) — even a quick one. It helps surface problems that the docs don't cover yet, and most things can be resolved quickly.
+
+For paid support or managed hosting enquiries, email [jacob@gatekeeperai.io](mailto:jacob@gatekeeperai.io).
