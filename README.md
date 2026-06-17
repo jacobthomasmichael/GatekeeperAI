@@ -83,3 +83,9 @@ worker/         Celery task definitions (deploy, SLA checks)
 | `admin` | Everything an approver can do, plus manage users, stop/start deployments, view audit logs |
 
 New users are created by an admin — there is no public self-registration.
+
+---
+
+## Stuck on something?
+
+If you hit a wall during install or setup, please [open an issue](https://github.com/jacobthomasmichael/GatekeeperAI/issues/new?template=bug_report.md) — even a quick one. It helps surface problems that the docs don't cover yet, and most things can be resolved quickly.
