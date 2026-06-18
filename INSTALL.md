@@ -286,7 +286,6 @@ If you want GatekeeperAI to be accessible to your whole team rather than just on
 
 ```
 APP_BASE_URL=https://your-server-address.com
-NEXT_PUBLIC_API_URL=https://your-server-address.com/api/v1
 ```
 
 Ask your IT team to open ports **3000** (web) and **8000** (API) on the server's firewall.
@@ -331,7 +330,6 @@ For all three options, the process is the same high-level flow:
 14. Update your `.env` file to use your server's address:
     ```
     APP_BASE_URL=http://1.2.3.4
-    NEXT_PUBLIC_API_URL=http://1.2.3.4:8000/api/v1
     ```
 
 > **Tip:** For a permanent web address (like `gatekeeper.yourcompany.com`), ask your IT team to point a domain name at the server's IP address and set up an SSL certificate. AWS also offers this through a service called **Route 53**.
@@ -367,7 +365,6 @@ For all three options, the process is the same high-level flow:
 11. Update your `.env` file:
     ```
     APP_BASE_URL=http://1.2.3.4
-    NEXT_PUBLIC_API_URL=http://1.2.3.4:8000/api/v1
     ```
 
 > **Tip:** For a custom domain name, Azure offers **Azure DNS** and **App Service Managed Certificates** for free SSL. Ask your IT team to configure these after the initial setup is working.
@@ -399,7 +396,6 @@ For all three options, the process is the same high-level flow:
 11. Update your `.env` file:
     ```
     APP_BASE_URL=http://your-external-ip
-    NEXT_PUBLIC_API_URL=http://your-external-ip:8000/api/v1
     ```
 12. To allow ports 3000 and 8000 through the firewall, go to **VPC Network → Firewall** in the left menu, click **Create Firewall Rule**, and add rules for TCP ports **3000** and **8000** with source `0.0.0.0/0`.
 
@@ -543,11 +539,10 @@ The second command (`nginx -t`) checks for typos — if it says "syntax is ok," 
 
 ### Part 6 — Update GatekeeperAI to use your domain
 
-Open your `.env` file on the server and update these two lines to use your actual domain:
+Open your `.env` file on the server and update this line to use your actual domain:
 
 ```
 APP_BASE_URL=https://gatekeeper.yourcompany.com
-NEXT_PUBLIC_API_URL=https://gatekeeper.yourcompany.com/api/v1
 ```
 
 Then restart GatekeeperAI:
