@@ -98,19 +98,23 @@ def get_container_logs(container_id: str, tail: int = 200) -> str:
 
 
 def pick_external_port(base: int = 8600) -> int:
-    """Find the next unused port starting from base.
+    """Find the next host port in 8600-9000 not already bound by a container.
 
-    The threading lock prevents two concurrent calls within the same process
-    from racing to the same port. Cross-process races (multiple Celery workers)
-    are handled by the docker-start error path in deploy_task.
+    Queries Docker directly — socket.bind() inside the worker container cannot
+    see host-level port allocations, so it would always return 8600.
     """
-    import socket
+    client = _client()
+    used: set[int] = set()
+    for c in client.containers.list():
+        for bindings in (c.ports or {}).values():
+            for b in (bindings or []):
+                try:
+                    used.add(int(b["HostPort"]))
+                except (KeyError, ValueError):
+                    pass
+
     with _port_lock:
         for port in range(base, 9000):
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                try:
-                    s.bind(("0.0.0.0", port))
-                    return port
-                except OSError:
-                    continue
+            if port not in used:
+                return port
     raise RuntimeError("No free ports available in range 8600-9000")
