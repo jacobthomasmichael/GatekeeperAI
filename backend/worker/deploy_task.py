@@ -161,6 +161,7 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
             deployment.container_name = container_name
             deployment.image_tag = image_tag
             deployment.status = "running"
+            deployment.started_at = datetime.now(timezone.utc)
             deployment.internal_port = internal_port
             deployment.external_port = external_port
             deployment.public_url = public_url
