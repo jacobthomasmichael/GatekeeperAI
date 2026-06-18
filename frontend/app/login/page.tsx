@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, FormEvent, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { Shield } from "lucide-react";
@@ -9,14 +9,17 @@ import { Shield } from "lucide-react";
 export default function LoginPage() {
   const { user, login } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const next = searchParams.get("next") || "/dashboard";
+
   useEffect(() => {
-    if (user) router.replace("/dashboard");
-  }, [user, router]);
+    if (user) router.replace(next);
+  }, [user, router, next]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -24,7 +27,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.push("/dashboard");
+      router.push(next);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Login failed");
     } finally {
