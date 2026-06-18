@@ -48,7 +48,6 @@ def write_app_config(safe_name: str, external_port: int, visibility: str = "priv
         f"    proxy_set_header Accept-Encoding \"\";\n"
         f"    proxy_read_timeout 60s;\n"
         f"    sub_filter_once on;\n"
-        f"    sub_filter_types text/html;\n"
         f"    sub_filter '<head>' '<head>{shim}';\n"
         f"}}\n"
     )
