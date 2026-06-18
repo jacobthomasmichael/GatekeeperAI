@@ -72,7 +72,7 @@ jobs:
           tags: ${{ steps.frontend-meta.outputs.tags }}
           labels: ${{ steps.frontend-meta.outputs.labels }}
           build-args: |
-            NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+            NEXT_PUBLIC_API_URL=/api/v1
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
