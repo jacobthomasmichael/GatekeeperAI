@@ -43,11 +43,10 @@ def start_container(
     """Start a container and return the Container object."""
     client = _client()
 
-    # Remove any stopped container with the same name left by a previous failed attempt
+    # Remove any existing container with this name before starting the new one.
+    # For updates this replaces the running container; for retries it clears orphans.
     try:
-        existing = client.containers.get(container_name)
-        if existing.status != "running":
-            existing.remove(force=True)
+        client.containers.get(container_name).remove(force=True)
     except Exception:
         pass
 
