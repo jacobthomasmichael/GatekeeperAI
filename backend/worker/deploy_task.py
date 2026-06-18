@@ -151,7 +151,7 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
                 await _fail(db, deployment, submission, f"docker run failed: {e}")
                 return
 
-            public_url = f"{settings.APP_BASE_URL}:{external_port}"
+            public_url = _write_nginx_app_config(safe_name, external_port, settings.APP_BASE_URL)
 
             deployment.container_id = container.id
             deployment.container_name = container_name
@@ -196,6 +196,51 @@ async def _fail(db, deployment: Deployment, submission: AppSubmission, reason: s
     else:
         submission.status = "approved"
     await db.commit()
+
+
+_NGINX_APPS_DIR = Path("/nginx-apps")
+
+
+def _write_nginx_app_config(safe_name: str, external_port: int, app_base_url: str) -> str:
+    """Write a per-app nginx location block and reload nginx. Returns the public URL."""
+    public_url = f"{app_base_url}/apps/{safe_name}/"
+
+    if not _NGINX_APPS_DIR.exists():
+        return public_url
+
+    conf = (
+        f"location /apps/{safe_name}/ {{\n"
+        f"    proxy_pass http://host.docker.internal:{external_port}/;\n"
+        f"    proxy_http_version 1.1;\n"
+        f"    proxy_set_header Upgrade $http_upgrade;\n"
+        f"    proxy_set_header Connection \"upgrade\";\n"
+        f"    proxy_set_header Host $host;\n"
+        f"    proxy_set_header X-Real-IP $remote_addr;\n"
+        f"    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
+        f"    proxy_set_header X-Forwarded-Proto https;\n"
+        f"    proxy_read_timeout 60s;\n"
+        f"}}\n"
+    )
+    (_NGINX_APPS_DIR / f"{safe_name}.conf").write_text(conf)
+    _reload_nginx()
+    return public_url
+
+
+def _remove_nginx_app_config(safe_name: str) -> None:
+    if not _NGINX_APPS_DIR.exists():
+        return
+    conf_path = _NGINX_APPS_DIR / f"{safe_name}.conf"
+    conf_path.unlink(missing_ok=True)
+    _reload_nginx()
+
+
+def _reload_nginx() -> None:
+    try:
+        import docker as _docker
+        nginx = _docker.from_env().containers.get("infra-nginx")
+        nginx.exec_run("nginx -s reload")
+    except Exception as e:
+        logger.warning("nginx reload skipped: %s", e)
 
 
 def _parse_expose(dockerfile_path: Path) -> int | None:

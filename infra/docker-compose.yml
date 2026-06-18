@@ -32,6 +32,23 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # ── Nginx reverse proxy (production only) ─────────────────────────────────
+
+  nginx:
+    image: nginx:alpine
+    container_name: infra-nginx
+    profiles: ["production"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
   # ── Backend API ───────────────────────────────────────────────────────────────
 
   api:
@@ -58,6 +75,7 @@ services:
       - git_repos:/git-repos
       - ../.env:/app/.env  # bind-mount so setup wizard writes persist to host
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./nginx/conf.d/apps:/nginx-apps
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,6 +112,7 @@ services:
     volumes:
       - git_repos:/git-repos
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./nginx/conf.d/apps:/nginx-apps
     depends_on:
       api:
         condition: service_healthy
