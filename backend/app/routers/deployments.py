@@ -65,6 +65,13 @@ async def stop_deployment(
     if deployment.container_id:
         container_service.stop_container(deployment.container_id)
 
+    submission = await db.get(AppSubmission, deployment.submission_id)
+    if submission:
+        import re
+        from worker.deploy_task import _remove_nginx_app_config
+        safe_name = re.sub(r"[^a-z0-9_-]", "-", submission.name.lower())
+        _remove_nginx_app_config(safe_name)
+
     deployment.status = "stopped"
     from datetime import datetime, timezone
     deployment.stopped_at = datetime.now(timezone.utc)
