@@ -86,6 +86,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       GIT_REPOS_BASE_PATH: /git-repos
       ENVIRONMENT: ${ENVIRONMENT:-production}
+    group_add:
+      - "${DOCKER_GID:-999}"
     volumes:
       - git_repos:/git-repos
       - /var/run/docker.sock:/var/run/docker.sock
