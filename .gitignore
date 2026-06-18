@@ -4,6 +4,9 @@
 *.p12
 *.pfx
 
+# Internal ops scripts — never commit provisioning or customer data
+scripts/
+
 # Python
 __pycache__/
 *.py[cod]
