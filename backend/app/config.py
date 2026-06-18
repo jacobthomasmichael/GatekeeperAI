@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     REDIS_URL: str
     SECRET_KEY: str
     ANTHROPIC_API_KEY: str
-    GIT_REPOS_BASE_PATH: str
+    GIT_REPOS_BASE_PATH: str = "/git-repos"
     SECRET_ENCRYPTION_KEY: str
     ENVIRONMENT: str = "development"
     APP_BASE_URL: str = "http://localhost"

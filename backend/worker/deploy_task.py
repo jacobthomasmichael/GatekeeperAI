@@ -151,7 +151,11 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
                 await _fail(db, deployment, submission, f"docker run failed: {e}")
                 return
 
-            public_url = _write_nginx_app_config(safe_name, external_port, settings.APP_BASE_URL)
+            try:
+                public_url = _write_nginx_app_config(safe_name, external_port, settings.APP_BASE_URL)
+            except Exception as e:
+                logger.warning("nginx config write failed (app will still be accessible via port): %s", e)
+                public_url = f"{settings.APP_BASE_URL}/apps/{safe_name}/"
 
             deployment.container_id = container.id
             deployment.container_name = container_name
