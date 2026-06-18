@@ -165,7 +165,9 @@ async def upload_zip(
         commit_sha = await asyncio.to_thread(push_zip_to_repo, app.repo_path, zip_bytes)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as exc:
+        import logging
+        logging.getLogger(__name__).error("ZIP processing git error: %s\nstderr: %s", exc, exc.stderr)
         raise HTTPException(status_code=500, detail="Failed to process ZIP — ensure the archive contains valid files")
 
     # detect if this is an update to an already-deployed app

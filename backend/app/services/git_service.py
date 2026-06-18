@@ -84,26 +84,41 @@ def push_zip_to_repo(repo_path: str, zip_bytes: bytes) -> str:
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             if sum(i.file_size for i in zf.infolist()) > _MAX_EXTRACT:
                 raise ValueError("ZIP content exceeds 200 MB limit")
-            for info in zf.infolist():
+            entries = zf.infolist()
+            for info in entries:
                 if info.filename.startswith("/") or ".." in info.filename:
                     raise ValueError(f"Unsafe path in ZIP: {info.filename!r}")
+            has_files = any(not info.is_dir() for info in entries)
+            if not has_files:
+                raise ValueError("ZIP contains no files")
             zf.extractall(str(work))
 
-        # Commit
+        # Commit — if content is identical to the last upload, skip and return
+        # the existing HEAD SHA rather than failing with "nothing to commit".
         subprocess.run(["git", "-C", str(work), "add", "-A"], check=True, capture_output=True)
-        subprocess.run(
+        result = subprocess.run(
             ["git", "-C", str(work), "commit", "-m", "Upload via GatekeeperAI web interface"],
-            check=True, capture_output=True,
+            capture_output=True,
         )
+        if result.returncode != 0:
+            # "nothing to commit" — content is unchanged; return the current HEAD
+            existing = subprocess.run(
+                ["git", "--git-dir", repo_path, "rev-parse", "refs/heads/main"],
+                capture_output=True, text=True,
+            )
+            if existing.returncode == 0:
+                return existing.stdout.strip()
+            raise ValueError("ZIP content produced no changes and no prior version exists")
 
         sha = subprocess.run(
             ["git", "-C", str(work), "rev-parse", "HEAD"],
             check=True, capture_output=True, text=True,
         ).stdout.strip()
 
-        # Fetch objects into bare repo — does NOT fire post-receive
+        # Fetch objects into bare repo — does NOT fire post-receive.
+        # Force (+) to allow non-fast-forward updates (each upload is an orphan commit).
         subprocess.run(
-            ["git", "--git-dir", repo_path, "fetch", str(work), "main:refs/heads/main"],
+            ["git", "--git-dir", repo_path, "fetch", str(work), "+main:refs/heads/main"],
             check=True, capture_output=True,
         )
 
