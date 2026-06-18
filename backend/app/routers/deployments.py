@@ -82,6 +82,7 @@ async def stop_deployment(
         from app.services import nginx_service
         safe_name = re.sub(r"[^a-z0-9_-]", "-", submission.name.lower())
         nginx_service.remove_app_config(safe_name)
+        submission.status = "stopped"
 
     deployment.status = "stopped"
     from datetime import datetime, timezone
@@ -113,6 +114,10 @@ async def restart_deployment(
     approval = result.scalar_one_or_none()
     if not approval:
         raise HTTPException(status_code=409, detail="No approved approval found for this deployment")
+
+    submission = await db.get(AppSubmission, deployment.submission_id)
+    if submission:
+        submission.status = "deployed"
 
     from worker.deploy_task import deploy_approved_app
     deploy_approved_app.delay(str(approval.id))
