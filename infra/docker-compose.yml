@@ -52,9 +52,12 @@ services:
       HOOK_CALLBACK_URL: http://api:8000
       GIT_SSH_HOST: ${GIT_SSH_HOST:-localhost}
       GIT_SSH_PORT: ${GIT_SSH_PORT:-2222}
+    group_add:
+      - "${DOCKER_GID:-999}"
     volumes:
       - git_repos:/git-repos
       - ../.env:/app/.env  # bind-mount so setup wizard writes persist to host
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
