@@ -102,9 +102,12 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
                 await _fail(db, deployment, submission, f"docker build failed: {e}")
                 return
 
-            # Load secrets as env vars
+            # Load secrets as env vars; inject PYTHONUNBUFFERED so Python app
+            # logs flush immediately and appear in `docker logs`.
             from app.services.secrets_service import decrypt_all
             secrets = await decrypt_all(str(submission.id), db)
+            if (submission.detected_type or "").startswith("python"):
+                secrets.setdefault("PYTHONUNBUFFERED", "1")
 
             # Backfill stable port/name for apps deployed before this feature shipped
             if scan.scan_type == "update" and submission.stable_external_port is None and deployment.external_port:
