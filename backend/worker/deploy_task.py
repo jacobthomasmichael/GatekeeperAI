@@ -216,6 +216,21 @@ def _write_nginx_app_config(safe_name: str, external_port: int, app_base_url: st
     if not _NGINX_APPS_DIR.exists():
         return public_url
 
+    # Minified JS shim injected into every HTML response.
+    # Patches fetch() and XMLHttpRequest so absolute paths like /api/x are
+    # rewritten to /apps/<name>/api/x — meaning apps written and tested locally
+    # work without any path changes when deployed behind the nginx sub-path proxy.
+    base = f"/apps/{safe_name}"
+    shim = (
+        f"<base href=\"{base}/\">"
+        f"<script>(function(){{"
+        f"var B=\"{base}\";"
+        f"function p(u){{return typeof u===\"string\"&&u.startsWith(\"/\")&&!u.startsWith(B)?B+u:u}}"
+        f"var f=window.fetch;window.fetch=function(u,o){{return f.call(this,p(u),o)}};"
+        f"var x=XMLHttpRequest.prototype.open;"
+        f"XMLHttpRequest.prototype.open=function(m,u,a,b,c){{return x.call(this,m,p(u),a,b,c)}}"
+        f"}})()</script>"
+    )
     conf = (
         f"location /apps/{safe_name}/ {{\n"
         f"    proxy_pass http://host.docker.internal:{external_port}/;\n"
@@ -226,7 +241,11 @@ def _write_nginx_app_config(safe_name: str, external_port: int, app_base_url: st
         f"    proxy_set_header X-Real-IP $remote_addr;\n"
         f"    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
         f"    proxy_set_header X-Forwarded-Proto https;\n"
+        f"    proxy_set_header Accept-Encoding \"\";\n"
         f"    proxy_read_timeout 60s;\n"
+        f"    sub_filter_once on;\n"
+        f"    sub_filter_types text/html;\n"
+        f"    sub_filter '<head>' '<head>{shim}';\n"
         f"}}\n"
     )
     (_NGINX_APPS_DIR / f"{safe_name}.conf").write_text(conf)
