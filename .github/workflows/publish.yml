@@ -9,6 +9,7 @@ on:
 env:
   BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/gatekeeperai-backend
   FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/gatekeeperai-frontend
+  GIT_SERVICE_IMAGE: ghcr.io/${{ github.repository_owner }}/gatekeeperai-git-service
 
 jobs:
   publish:
@@ -72,5 +73,26 @@ jobs:
           labels: ${{ steps.frontend-meta.outputs.labels }}
           build-args: |
             NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract metadata — git-service
+        id: git-service-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GIT_SERVICE_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push git-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./infra/git-service
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.git-service-meta.outputs.tags }}
+          labels: ${{ steps.git-service-meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

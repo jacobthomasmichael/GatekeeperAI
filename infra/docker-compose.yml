@@ -115,6 +115,7 @@ services:
   # ── SSH Git Service ───────────────────────────────────────────────────────────
 
   git:
+    image: ${GIT_SERVICE_IMAGE:-ghcr.io/jacobthomasmichael/gatekeeperai-git-service:latest}
     build:
       context: ./git-service
       dockerfile: Dockerfile
