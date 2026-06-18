@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { deploymentsApi, authApi, type Deployment } from "@/lib/api";
+import { deploymentsApi, appsApi, authApi, type Deployment } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import {
   Boxes,
@@ -16,6 +16,9 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Lock,
+  Globe,
+  Flag,
 } from "lucide-react";
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
@@ -143,6 +146,86 @@ function LogPane({ deploymentId, hasContainer }: { deploymentId: string; hasCont
   );
 }
 
+// ── Visibility toggle ─────────────────────────────────────────────────────────
+
+function VisibilityToggle({
+  submissionId,
+  visibility,
+  onChange,
+}: {
+  submissionId: string;
+  visibility: string | null;
+  onChange: (v: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const isPublic = visibility === "public";
+
+  const toggle = async () => {
+    if (!isPublic) {
+      setConfirming(true);
+      return;
+    }
+    setBusy(true);
+    try {
+      await appsApi.updateVisibility(submissionId, "private");
+      onChange("private");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmPublic = async () => {
+    setBusy(true);
+    setConfirming(false);
+    try {
+      await appsApi.updateVisibility(submissionId, "public");
+      onChange("public");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      {confirming && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+          <Flag size={12} className="shrink-0" />
+          <span>Making this app public will flag it for admin review.</span>
+          <button
+            onClick={confirmPublic}
+            className="ml-1 font-semibold underline hover:no-underline"
+          >
+            Confirm
+          </button>
+          <button onClick={() => setConfirming(false)} className="hover:underline">
+            Cancel
+          </button>
+        </div>
+      )}
+      <button
+        onClick={toggle}
+        disabled={busy || confirming}
+        title={isPublic ? "Click to require login" : "Click to make public"}
+        className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+          isPublic
+            ? "border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+            : "border-gray-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800"
+        }`}
+      >
+        {busy ? (
+          <Loader2 size={11} className="animate-spin" />
+        ) : isPublic ? (
+          <Globe size={11} />
+        ) : (
+          <Lock size={11} />
+        )}
+        {isPublic ? "Public" : "Private"}
+      </button>
+    </div>
+  );
+}
+
 // ── Deployment card ───────────────────────────────────────────────────────────
 
 function DeploymentCard({
@@ -222,7 +305,14 @@ function DeploymentCard({
           )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+          {d.status === "running" && (
+            <VisibilityToggle
+              submissionId={d.submission_id}
+              visibility={d.app_visibility}
+              onChange={(v) => setD((prev) => ({ ...prev, app_visibility: v }))}
+            />
+          )}
           {d.public_url && d.status === "running" && (
             <a
               href={d.public_url}

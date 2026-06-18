@@ -213,6 +213,8 @@ export interface Deployment {
   started_at: string | null;
   stopped_at: string | null;
   created_at: string;
+  app_visibility: string | null;
+  app_public_flagged_at: string | null;
 }
 
 // ── Auth API ─────────────────────────────────────────────────────────────────
@@ -250,6 +252,8 @@ export const appsApi = {
     return res.json();
   },
   delete: (id: string) => api.delete(`/apps/${id}`),
+  updateVisibility: (id: string, visibility: "private" | "public") =>
+    api.patch<AppSubmission>(`/apps/${id}/visibility`, { visibility }),
 };
 
 // ── Scans API ─────────────────────────────────────────────────────────────────

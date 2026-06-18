@@ -18,7 +18,7 @@ from app.models.app_submission import AppSubmission
 from app.models.approval import Approval
 from app.models.deployment import Deployment
 from app.models.scan import Scan
-from app.services import container_service, dockerfile_service
+from app.services import container_service, dockerfile_service, nginx_service
 from worker.celery_app import celery_app
 
 
@@ -155,7 +155,7 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
                 return
 
             try:
-                public_url = _write_nginx_app_config(safe_name, external_port, settings.APP_BASE_URL)
+                public_url = nginx_service.write_app_config(safe_name, external_port, submission.visibility)
             except Exception as e:
                 logger.warning("nginx config write failed (app will still be accessible via port): %s", e)
                 public_url = f"{settings.APP_BASE_URL}/apps/{safe_name}/"
@@ -205,69 +205,6 @@ async def _fail(db, deployment: Deployment, submission: AppSubmission, reason: s
         submission.status = "approved"
     await db.commit()
 
-
-_NGINX_APPS_DIR = Path("/nginx-apps")
-
-
-def _write_nginx_app_config(safe_name: str, external_port: int, app_base_url: str) -> str:
-    """Write a per-app nginx location block and reload nginx. Returns the public URL."""
-    public_url = f"{app_base_url}/apps/{safe_name}/"
-
-    if not _NGINX_APPS_DIR.exists():
-        return public_url
-
-    # Minified JS shim injected into every HTML response.
-    # Patches fetch() and XMLHttpRequest so absolute paths like /api/x are
-    # rewritten to /apps/<name>/api/x — meaning apps written and tested locally
-    # work without any path changes when deployed behind the nginx sub-path proxy.
-    base = f"/apps/{safe_name}"
-    shim = (
-        f"<base href=\"{base}/\">"
-        f"<script>(function(){{"
-        f"var B=\"{base}\";"
-        f"function p(u){{return typeof u===\"string\"&&u.startsWith(\"/\")&&!u.startsWith(B)?B+u:u}}"
-        f"var f=window.fetch;window.fetch=function(u,o){{return f.call(this,p(u),o)}};"
-        f"var x=XMLHttpRequest.prototype.open;"
-        f"XMLHttpRequest.prototype.open=function(m,u,a,b,c){{return x.call(this,m,p(u),a,b,c)}}"
-        f"}})()</script>"
-    )
-    conf = (
-        f"location /apps/{safe_name}/ {{\n"
-        f"    proxy_pass http://host.docker.internal:{external_port}/;\n"
-        f"    proxy_http_version 1.1;\n"
-        f"    proxy_set_header Upgrade $http_upgrade;\n"
-        f"    proxy_set_header Connection \"upgrade\";\n"
-        f"    proxy_set_header Host $host;\n"
-        f"    proxy_set_header X-Real-IP $remote_addr;\n"
-        f"    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
-        f"    proxy_set_header X-Forwarded-Proto https;\n"
-        f"    proxy_set_header Accept-Encoding \"\";\n"
-        f"    proxy_read_timeout 60s;\n"
-        f"    sub_filter_once on;\n"
-        f"    sub_filter_types text/html;\n"
-        f"    sub_filter '<head>' '<head>{shim}';\n"
-        f"}}\n"
-    )
-    (_NGINX_APPS_DIR / f"{safe_name}.conf").write_text(conf)
-    _reload_nginx()
-    return public_url
-
-
-def _remove_nginx_app_config(safe_name: str) -> None:
-    if not _NGINX_APPS_DIR.exists():
-        return
-    conf_path = _NGINX_APPS_DIR / f"{safe_name}.conf"
-    conf_path.unlink(missing_ok=True)
-    _reload_nginx()
-
-
-def _reload_nginx() -> None:
-    try:
-        import docker as _docker
-        nginx = _docker.from_env().containers.get("infra-nginx")
-        nginx.exec_run("nginx -s reload")
-    except Exception as e:
-        logger.warning("nginx reload skipped: %s", e)
 
 
 def _parse_expose(dockerfile_path: Path) -> int | None:

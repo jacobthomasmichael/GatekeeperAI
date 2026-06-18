@@ -5,6 +5,17 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
+class VisibilityUpdate(BaseModel):
+    visibility: str
+
+    @field_validator("visibility")
+    @classmethod
+    def valid_visibility(cls, v: str) -> str:
+        if v not in ("private", "public"):
+            raise ValueError("visibility must be 'private' or 'public'")
+        return v
+
+
 class AppCreate(BaseModel):
     name: str
     description: str
@@ -48,4 +59,6 @@ class AppResponse(BaseModel):
     commit_sha: Optional[str]
     created_at: datetime
     updated_at: datetime
+    visibility: str = "private"
+    public_flagged_at: Optional[datetime] = None
     rejection: Optional[RejectionFeedback] = None

@@ -14,7 +14,7 @@ from app.models.approval import Approval
 from app.models.scan import Scan
 from app.models.user import User
 from app.config import settings
-from app.schemas.app_submission import AppCreate, AppResponse, RejectionFeedback
+from app.schemas.app_submission import AppCreate, AppResponse, RejectionFeedback, VisibilityUpdate
 from app.services.git_service import create_bare_repo, delete_bare_repo, push_zip_to_repo
 
 router = APIRouter(prefix="/apps", tags=["apps"])
@@ -203,6 +203,43 @@ async def upload_zip(
     await db.commit()
 
     return {"scan_id": str(scan.id), "commit_sha": commit_sha}
+
+
+@router.patch("/{app_id}/visibility", response_model=AppResponse)
+async def update_visibility(
+    app_id: uuid.UUID,
+    payload: VisibilityUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await db.execute(select(AppSubmission).where(AppSubmission.id == app_id))
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+    if current_user.role == "ic" and app.submitter_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    app.visibility = payload.visibility
+    if payload.visibility == "public":
+        from datetime import datetime, timezone
+        app.public_flagged_at = datetime.now(timezone.utc)
+    else:
+        app.public_flagged_at = None
+    await db.flush()
+
+    # If the app is deployed, rewrite the nginx config immediately
+    if app.status == "deployed" and app.stable_external_port and app.stable_container_name:
+        import re
+        from app.services import nginx_service
+        safe_name = re.sub(r"[^a-z0-9_-]", "-", app.name.lower())
+        try:
+            nginx_service.write_app_config(safe_name, app.stable_external_port, app.visibility)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("nginx config update failed: %s", e)
+
+    await db.commit()
+    return await _with_rejection(app, db)
 
 
 @router.delete("/{app_id}", status_code=status.HTTP_204_NO_CONTENT)

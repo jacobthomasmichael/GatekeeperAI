@@ -22,3 +22,5 @@ class DeploymentResponse(BaseModel):
     started_at: datetime | None
     stopped_at: datetime | None
     created_at: datetime
+    app_visibility: str | None = None
+    app_public_flagged_at: datetime | None = None

@@ -18,9 +18,20 @@ router = APIRouter(prefix="/deployments", tags=["deployments"])
 async def list_deployments(
     _: User = Depends(require_approver),
     db: AsyncSession = Depends(get_db),
-) -> list[Deployment]:
-    result = await db.execute(select(Deployment).order_by(Deployment.created_at.desc()))
-    return list(result.scalars().all())
+) -> list[dict]:
+    result = await db.execute(
+        select(Deployment, AppSubmission.visibility, AppSubmission.public_flagged_at)
+        .join(AppSubmission, AppSubmission.id == Deployment.submission_id)
+        .order_by(Deployment.created_at.desc())
+    )
+    rows = result.all()
+    out = []
+    for d, vis, flagged_at in rows:
+        data = {c.name: getattr(d, c.name) for c in d.__table__.columns}
+        data["app_visibility"] = vis
+        data["app_public_flagged_at"] = flagged_at
+        out.append(data)
+    return out
 
 
 @router.get("/{deployment_id}", response_model=DeploymentResponse)
@@ -68,9 +79,9 @@ async def stop_deployment(
     submission = await db.get(AppSubmission, deployment.submission_id)
     if submission:
         import re
-        from worker.deploy_task import _remove_nginx_app_config
+        from app.services import nginx_service
         safe_name = re.sub(r"[^a-z0-9_-]", "-", submission.name.lower())
-        _remove_nginx_app_config(safe_name)
+        nginx_service.remove_app_config(safe_name)
 
     deployment.status = "stopped"
     from datetime import datetime, timezone
