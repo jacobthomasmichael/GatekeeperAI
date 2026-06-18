@@ -83,9 +83,14 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
                 await _fail(db, deployment, submission, f"git archive failed: {e.stderr.decode()}")
                 return
 
-            # Write Dockerfile
-            dockerfile_content = dockerfile_service.generate_dockerfile(submission.detected_type)
-            Path(work_dir, "Dockerfile").write_text(dockerfile_content)
+            # Write Dockerfile only if the repo didn't include one
+            dockerfile_path = Path(work_dir, "Dockerfile")
+            if not dockerfile_path.exists():
+                dockerfile_content = dockerfile_service.generate_dockerfile(submission.detected_type)
+                dockerfile_path.write_text(dockerfile_content)
+
+            # Determine internal port — prefer EXPOSE from the Dockerfile
+            internal_port = _parse_expose(dockerfile_path) or _port_for_type(submission.detected_type)
 
             # Build image (old container stays live during this step)
             safe_name = re.sub(r"[^a-z0-9_-]", "-", submission.name.lower())
@@ -100,8 +105,6 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
             # Load secrets as env vars
             from app.services.secrets_service import decrypt_all
             secrets = await decrypt_all(str(submission.id), db)
-
-            internal_port = _port_for_type(submission.detected_type)
 
             # Backfill stable port/name for apps deployed before this feature shipped
             if scan.scan_type == "update" and submission.stable_external_port is None and deployment.external_port:
@@ -193,6 +196,20 @@ async def _fail(db, deployment: Deployment, submission: AppSubmission, reason: s
     else:
         submission.status = "approved"
     await db.commit()
+
+
+def _parse_expose(dockerfile_path: Path) -> int | None:
+    """Return the first EXPOSE port from a Dockerfile, or None if not found."""
+    try:
+        for line in dockerfile_path.read_text().splitlines():
+            line = line.strip()
+            if line.upper().startswith("EXPOSE"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    return int(parts[1].split("/")[0])
+    except Exception:
+        pass
+    return None
 
 
 def _port_for_type(detected_type: str | None) -> int:

@@ -80,6 +80,13 @@ cp .env.example .env
 Copy-Item .env.example .env
 ```
 
+> **Linux server note:** Run the following after copying so GatekeeperAI can save settings during the setup wizard and so the deploy worker can access Docker:
+> ```
+> chmod a+w .env
+> echo "DOCKER_GID=$(getent group docker | cut -d: -f3)" >> .env
+> ```
+> This is only needed on Linux — Mac and Windows users can skip this step.
+
 ---
 
 ## Step 4 — Fill in your configuration file

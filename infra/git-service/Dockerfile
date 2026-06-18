@@ -1,7 +1,7 @@
 FROM alpine:3.19
 
 RUN apk add --no-cache openssh git curl bash \
-    && adduser -D -s /bin/bash git \
+    && adduser -D -u 1001 -s /bin/bash git \
     && mkdir -p /home/git/.ssh /git-repos \
     && chmod 700 /home/git/.ssh \
     && chown -R git:git /home/git /git-repos \
