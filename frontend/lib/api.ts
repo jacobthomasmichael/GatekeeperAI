@@ -91,7 +91,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const text = await res.text().catch(() => res.statusText);
     let detail = text;
     try {
-      detail = JSON.parse(text)?.detail ?? text;
+      const raw = JSON.parse(text)?.detail;
+      if (Array.isArray(raw)) {
+        detail = raw.map((e: { msg: string }) => e.msg.replace(/^Value error, /, "")).join("; ");
+      } else {
+        detail = raw ?? text;
+      }
     } catch {}
     throw new ApiError(res.status, detail);
   }
