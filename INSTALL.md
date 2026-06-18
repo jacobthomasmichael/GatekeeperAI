@@ -80,6 +80,12 @@ cp .env.example .env
 Copy-Item .env.example .env
 ```
 
+> **Linux server note:** Run the following after copying so GatekeeperAI can save settings during the setup wizard:
+> ```
+> chmod a+w .env
+> ```
+> This is only needed on Linux — Mac and Windows users can skip this step.
+
 ---
 
 ## Step 4 — Fill in your configuration file
