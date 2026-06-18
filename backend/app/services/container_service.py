@@ -43,6 +43,14 @@ def start_container(
     """Start a container and return the Container object."""
     client = _client()
 
+    # Remove any stopped container with the same name left by a previous failed attempt
+    try:
+        existing = client.containers.get(container_name)
+        if existing.status != "running":
+            existing.remove(force=True)
+    except Exception:
+        pass
+
     ports = {f"{internal_port}/tcp": external_port}
 
     container = client.containers.run(
