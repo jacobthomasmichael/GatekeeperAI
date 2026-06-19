@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { appsApi, scansApi, type AppSubmission, type Scan } from "@/lib/api";
+import { appsApi, authApi, scansApi, type AppSubmission, type Scan, type User } from "@/lib/api";
+import AppAccessManager from "@/components/AppAccessManager";
 import SecretsManager from "@/components/SecretsManager";
 import RiskBadge from "@/components/RiskBadge";
 import StatusBadge from "@/components/StatusBadge";
@@ -11,12 +12,14 @@ import { PlusCircle, GitBranch, ExternalLink, RefreshCw } from "lucide-react";
 
 export default function DashboardPage() {
   const [apps, setApps] = useState<AppSubmission[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [latestScans, setLatestScans] = useState<Record<string, Scan>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    appsApi.list().then(async (list) => {
+    Promise.all([appsApi.list(), authApi.me()]).then(async ([list, me]) => {
       setApps(list);
+      setCurrentUser(me);
       setLoading(false);
       const scansMap: Record<string, Scan> = {};
       await Promise.all(
@@ -145,6 +148,12 @@ export default function DashboardPage() {
 
               {/* Secrets */}
               <SecretsManager appId={app.id} />
+
+              {/* Access control */}
+              <AppAccessManager
+                appId={app.id}
+                isOwner={currentUser?.id === app.submitter_id}
+              />
             </div>
           );
         })}

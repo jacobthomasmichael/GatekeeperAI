@@ -5,6 +5,19 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
+class AppUserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    email: str
+    username: str
+    role: str
+
+
+class AppUserGrant(BaseModel):
+    email: str
+
+
 class VisibilityUpdate(BaseModel):
     visibility: str
 
@@ -61,4 +74,5 @@ class AppResponse(BaseModel):
     updated_at: datetime
     visibility: str = "private"
     public_flagged_at: Optional[datetime] = None
+    allowed_users: list[uuid.UUID] = []
     rejection: Optional[RejectionFeedback] = None
