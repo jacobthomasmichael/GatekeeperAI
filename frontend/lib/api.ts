@@ -147,7 +147,15 @@ export interface AppSubmission {
   submitter_id: string;
   commit_sha: string | null;
   created_at: string;
+  allowed_users: string[];
   rejection: RejectionFeedback | null;
+}
+
+export interface AppUser {
+  id: string;
+  email: string;
+  username: string;
+  role: string;
 }
 
 export interface ScanResult {
@@ -254,6 +262,9 @@ export const appsApi = {
   delete: (id: string) => api.delete(`/apps/${id}`),
   updateVisibility: (id: string, visibility: "private" | "public") =>
     api.patch<AppSubmission>(`/apps/${id}/visibility`, { visibility }),
+  listUsers: (id: string) => api.get<AppUser[]>(`/apps/${id}/users`),
+  addUser: (id: string, email: string) => api.post<AppUser>(`/apps/${id}/users`, { email }),
+  removeUser: (id: string, userId: string) => api.delete(`/apps/${id}/users/${userId}`),
 };
 
 // ── Scans API ─────────────────────────────────────────────────────────────────

@@ -14,12 +14,31 @@ from app.models.approval import Approval
 from app.models.scan import Scan
 from app.models.user import User
 from app.config import settings
-from app.schemas.app_submission import AppCreate, AppResponse, RejectionFeedback, VisibilityUpdate
+from app.schemas.app_submission import (
+    AppCreate, AppResponse, AppUserGrant, AppUserResponse,
+    RejectionFeedback, VisibilityUpdate,
+)
 from app.services.git_service import create_bare_repo, delete_bare_repo, push_zip_to_repo
 
 router = APIRouter(prefix="/apps", tags=["apps"])
 
 _limiter = Limiter(key_func=get_remote_address)
+
+
+def _can_access(app: AppSubmission, user: User) -> bool:
+    """True if user can read/access this app (not necessarily manage it)."""
+    if user.role in ("admin", "approver"):
+        return True
+    if app.submitter_id == user.id:
+        return True
+    return bool(app.allowed_users and user.id in app.allowed_users)
+
+
+def _can_manage(app: AppSubmission, user: User) -> bool:
+    """True if user can modify this app (owner or admin only)."""
+    if user.role == "admin":
+        return True
+    return app.submitter_id == user.id
 
 
 async def _with_rejection(app: AppSubmission, db: AsyncSession) -> dict:
@@ -30,6 +49,9 @@ async def _with_rejection(app: AppSubmission, db: AsyncSession) -> dict:
     """
     data = {c.name: getattr(app, c.name) for c in app.__table__.columns}
     data["rejection"] = None
+    # Normalise None → [] so the schema validator is happy
+    if data.get("allowed_users") is None:
+        data["allowed_users"] = []
 
     if app.status in ("rejected", "deployed"):
         scan_result = await db.execute(
@@ -98,9 +120,13 @@ async def list_apps(
     if current_user.role in ("admin", "approver"):
         result = await db.execute(select(AppSubmission).order_by(AppSubmission.created_at.desc()))
     else:
+        # ICs see their own apps AND apps they've been granted access to
         result = await db.execute(
             select(AppSubmission)
-            .where(AppSubmission.submitter_id == current_user.id)
+            .where(
+                (AppSubmission.submitter_id == current_user.id)
+                | AppSubmission.allowed_users.contains([current_user.id])
+            )
             .order_by(AppSubmission.created_at.desc())
         )
     apps = list(result.scalars().all())
@@ -117,7 +143,7 @@ async def get_app(
     app = result.scalar_one_or_none()
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
-    if current_user.role == "ic" and app.submitter_id != current_user.id:
+    if not _can_access(app, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
     return await _with_rejection(app, db)
 
@@ -132,7 +158,7 @@ async def get_clone_url(
     app = result.scalar_one_or_none()
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
-    if current_user.role == "ic" and app.submitter_id != current_user.id:
+    if not _can_access(app, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
     from pathlib import Path
     repo_name = Path(app.repo_path).name
@@ -154,7 +180,8 @@ async def upload_zip(
     app = result.scalar_one_or_none()
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
-    if current_user.role == "ic" and app.submitter_id != current_user.id:
+    # Only the owner can upload new code
+    if not _can_manage(app, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a .zip archive")
@@ -216,7 +243,7 @@ async def update_visibility(
     app = result.scalar_one_or_none()
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
-    if current_user.role == "ic" and app.submitter_id != current_user.id:
+    if not _can_manage(app, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
 
     app.visibility = payload.visibility
@@ -242,6 +269,78 @@ async def update_visibility(
     return await _with_rejection(app, db)
 
 
+@router.get("/{app_id}/users", response_model=list[AppUserResponse])
+async def list_app_users(
+    app_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[User]:
+    result = await db.execute(select(AppSubmission).where(AppSubmission.id == app_id))
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+    if not _can_access(app, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    user_ids = list(app.allowed_users or [])
+    if not user_ids:
+        return []
+    users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+    return list(users_result.scalars().all())
+
+
+@router.post("/{app_id}/users", response_model=AppUserResponse, status_code=status.HTTP_201_CREATED)
+async def add_app_user(
+    app_id: uuid.UUID,
+    payload: AppUserGrant,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    result = await db.execute(select(AppSubmission).where(AppSubmission.id == app_id))
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+    if not _can_manage(app, current_user):
+        raise HTTPException(status_code=403, detail="Only the app owner or an admin can manage access")
+
+    user_result = await db.execute(select(User).where(User.email == payload.email))
+    target = user_result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="No user found with that email address")
+    if target.id == app.submitter_id:
+        raise HTTPException(status_code=409, detail="That user is already the app owner")
+
+    existing = list(app.allowed_users or [])
+    if target.id in existing:
+        raise HTTPException(status_code=409, detail="That user already has access")
+
+    app.allowed_users = existing + [target.id]
+    await db.commit()
+    return target
+
+
+@router.delete("/{app_id}/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_app_user(
+    app_id: uuid.UUID,
+    user_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    result = await db.execute(select(AppSubmission).where(AppSubmission.id == app_id))
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+    if not _can_manage(app, current_user):
+        raise HTTPException(status_code=403, detail="Only the app owner or an admin can manage access")
+
+    existing = list(app.allowed_users or [])
+    if user_id not in existing:
+        raise HTTPException(status_code=404, detail="User does not have access to this app")
+
+    app.allowed_users = [u for u in existing if u != user_id]
+    await db.commit()
+
+
 @router.delete("/{app_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_app(
     app_id: uuid.UUID,
@@ -252,7 +351,7 @@ async def delete_app(
     app = result.scalar_one_or_none()
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
-    if current_user.role == "ic" and app.submitter_id != current_user.id:
+    if not _can_manage(app, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
 
     delete_bare_repo(app.repo_path)

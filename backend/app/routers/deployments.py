@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_db, require_approver, require_admin
+from app.deps import get_db, get_current_user, require_approver, require_admin
 from app.models.app_submission import AppSubmission
 from app.models.deployment import Deployment
 from app.models.user import User
@@ -49,9 +49,18 @@ async def get_deployment(
 @router.get("/app/{submission_id}", response_model=DeploymentResponse)
 async def get_deployment_for_app(
     submission_id: uuid.UUID,
-    _: User = Depends(require_approver),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Deployment:
+    if current_user.role == "ic":
+        app = await db.get(AppSubmission, submission_id)
+        if not app:
+            raise HTTPException(status_code=404, detail="No deployment found for this app")
+        if app.submitter_id != current_user.id and not (
+            app.allowed_users and current_user.id in app.allowed_users
+        ):
+            raise HTTPException(status_code=403, detail="Access denied")
+
     result = await db.execute(
         select(Deployment).where(Deployment.submission_id == submission_id)
     )

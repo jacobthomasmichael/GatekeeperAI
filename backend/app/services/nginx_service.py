@@ -30,7 +30,7 @@ def write_app_config(safe_name: str, external_port: int, visibility: str = "priv
     auth_block = ""
     if visibility != "public":
         auth_block = (
-            f"    auth_request /api/v1/auth/verify;\n"
+            f"    auth_request /api/v1/auth/verify/{safe_name};\n"
             f"    error_page 401 = @app_login_redirect;\n"
         )
 

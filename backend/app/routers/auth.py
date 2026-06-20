@@ -1,3 +1,5 @@
+import uuid as _uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
@@ -104,9 +106,18 @@ async def me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
-@router.get("/verify", status_code=200, include_in_schema=False)
-async def verify_session(request: Request) -> dict:
-    """Called by nginx auth_request to gate access to deployed apps."""
+@router.get("/verify/{app}", status_code=200, include_in_schema=False)
+async def verify_session(
+    request: Request,
+    app: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Called by nginx auth_request to gate access to deployed apps.
+
+    `app` is the safe_name of the app. Checks that the authenticated user is
+    the owner or is in the app's allowed_users list. Admins and approvers
+    bypass the per-app check entirely.
+    """
     token = request.cookies.get(_COOKIE)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -116,4 +127,31 @@ async def verify_session(request: Request) -> dict:
             raise HTTPException(status_code=401, detail="Invalid token type")
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid token")
-    return {"ok": True}
+
+    # Admins and approvers always have access; skip the DB lookup.
+    role = payload.get("role", "ic")
+    if role in ("admin", "approver"):
+        return {"ok": True}
+
+    # Look up the deployed submission by its safe_name prefix on stable_container_name.
+    from app.models.app_submission import AppSubmission
+    result = await db.execute(
+        select(AppSubmission).where(
+            AppSubmission.stable_container_name.like(f"gka-{app}-%"),
+            AppSubmission.status == "deployed",
+        ).limit(1)
+    )
+    submission = result.scalar_one_or_none()
+
+    # Unknown app — fail open so misconfigured nginx doesn't permanently lock
+    # users out of an app whose DB record is missing.
+    if not submission:
+        return {"ok": True}
+
+    user_id = _uuid.UUID(payload["sub"])
+    if submission.submitter_id == user_id:
+        return {"ok": True}
+    if submission.allowed_users and user_id in submission.allowed_users:
+        return {"ok": True}
+
+    raise HTTPException(status_code=403, detail="Access denied")

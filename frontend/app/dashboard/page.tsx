@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { appsApi, scansApi, type AppSubmission, type Scan } from "@/lib/api";
+import { appsApi, authApi, deploymentsApi, scansApi, type AppSubmission, type Deployment, type Scan, type User } from "@/lib/api";
+import AppAccessManager from "@/components/AppAccessManager";
 import SecretsManager from "@/components/SecretsManager";
 import RiskBadge from "@/components/RiskBadge";
 import StatusBadge from "@/components/StatusBadge";
@@ -11,23 +12,33 @@ import { PlusCircle, GitBranch, ExternalLink, RefreshCw } from "lucide-react";
 
 export default function DashboardPage() {
   const [apps, setApps] = useState<AppSubmission[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [latestScans, setLatestScans] = useState<Record<string, Scan>>({});
+  const [deployments, setDeployments] = useState<Record<string, Deployment>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    appsApi.list().then(async (list) => {
+    Promise.all([appsApi.list(), authApi.me()]).then(async ([list, me]) => {
       setApps(list);
+      setCurrentUser(me);
       setLoading(false);
       const scansMap: Record<string, Scan> = {};
+      const deploymentsMap: Record<string, Deployment> = {};
       await Promise.all(
         list.map(async (app) => {
           try {
             const scans = await scansApi.listForApp(app.id);
             if (scans.length > 0) scansMap[app.id] = scans[0];
           } catch {}
+          if (app.status === "deployed") {
+            try {
+              deploymentsMap[app.id] = await deploymentsApi.getForApp(app.id);
+            } catch {}
+          }
         })
       );
       setLatestScans(scansMap);
+      setDeployments(deploymentsMap);
     });
   }, []);
 
@@ -80,6 +91,7 @@ export default function DashboardPage() {
       <div className="space-y-3">
         {apps.map((app) => {
           const scan = latestScans[app.id];
+          const deployment = deployments[app.id];
           return (
             <div
               key={app.id}
@@ -105,6 +117,17 @@ export default function DashboardPage() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 shrink-0">
+                  {deployment?.public_url && (
+                    <a
+                      href={deployment.public_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 rounded-md border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                    >
+                      <ExternalLink size={12} />
+                      Open App
+                    </a>
+                  )}
                   {scan && (
                     <Link
                       href={`/dashboard/scans/${scan.id}`}
@@ -145,6 +168,12 @@ export default function DashboardPage() {
 
               {/* Secrets */}
               <SecretsManager appId={app.id} />
+
+              {/* Access control */}
+              <AppAccessManager
+                appId={app.id}
+                isOwner={currentUser?.id === app.submitter_id}
+              />
             </div>
           );
         })}
