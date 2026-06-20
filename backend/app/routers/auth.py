@@ -1,6 +1,6 @@
 import uuid as _uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -106,17 +106,17 @@ async def me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
-@router.get("/verify", status_code=200, include_in_schema=False)
+@router.get("/verify/{app}", status_code=200, include_in_schema=False)
 async def verify_session(
     request: Request,
-    app: str | None = Query(None),
+    app: str,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Called by nginx auth_request to gate access to deployed apps.
 
-    When `app` query param is present (the app's safe_name), also checks that
-    the authenticated user is the owner or is in the app's allowed_users list.
-    Admins and approvers bypass the per-app check entirely.
+    `app` is the safe_name of the app. Checks that the authenticated user is
+    the owner or is in the app's allowed_users list. Admins and approvers
+    bypass the per-app check entirely.
     """
     token = request.cookies.get(_COOKIE)
     if not token:
@@ -127,10 +127,6 @@ async def verify_session(
             raise HTTPException(status_code=401, detail="Invalid token type")
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid token")
-
-    # No app-specific check requested — just validate the session.
-    if not app:
-        return {"ok": True}
 
     # Admins and approvers always have access; skip the DB lookup.
     role = payload.get("role", "ic")
