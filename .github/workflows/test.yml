@@ -46,9 +46,19 @@ jobs:
       - name: Run tests
         env:
           RATELIMIT_ENABLED: "0"
+          DATABASE_URL: "postgresql+asyncpg://gatekeeper:gatekeeper_dev@localhost:5433/gatekeeperai_test"
+          REDIS_URL: "redis://localhost:6379/0"
+          SECRET_KEY: "ci-test-secret-key-not-for-production"
+          SECRET_ENCRYPTION_KEY: "Y2ktdGVzdC1lbmNyeXB0aW9uLWtleS0zMmNoYXJz"
+          ANTHROPIC_API_KEY: "sk-ant-ci-placeholder"
         run: python -m pytest tests/ -v --ignore=tests/test_setup.py -x
 
       - name: Run setup tests in isolation
         env:
           RATELIMIT_ENABLED: "0"
+          DATABASE_URL: "postgresql+asyncpg://gatekeeper:gatekeeper_dev@localhost:5433/gatekeeperai_test"
+          REDIS_URL: "redis://localhost:6379/0"
+          SECRET_KEY: "ci-test-secret-key-not-for-production"
+          SECRET_ENCRYPTION_KEY: "Y2ktdGVzdC1lbmNyeXB0aW9uLWtleS0zMmNoYXJz"
+          ANTHROPIC_API_KEY: "sk-ant-ci-placeholder"
         run: python -m pytest tests/test_setup.py -v
