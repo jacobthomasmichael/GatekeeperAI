@@ -1,13 +1,17 @@
 """
-Story 1 tests: passkeys table, nullable hashed_password, and stub endpoints.
-
-These tests verify the scaffolding is correct before Stories 2 and 3 implement
-the actual WebAuthn attestation and assertion flows.
+Passkey tests — Story 1 (schema/stubs) and Story 2 (registration flow).
 """
 import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import inspect, text
+from sqlalchemy import text
+from webauthn.helpers.structs import (
+    AttestationFormat,
+    CredentialDeviceType,
+    PublicKeyCredentialType,
+)
+from webauthn.registration.verify_registration_response import VerifiedRegistration
 
 from sqlalchemy import select
 
@@ -168,17 +172,6 @@ async def test_passkey_register_begin_requires_auth(client):
 
 
 @pytest.mark.asyncio
-async def test_passkey_register_begin_returns_501_when_authed(client, ic_token):
-    resp = await client.post(
-        "/api/v1/auth/passkey/register/begin",
-        json={"device_label": "My Mac"},
-        headers={"Authorization": f"Bearer {ic_token}"},
-    )
-    assert resp.status_code == 501
-    assert resp.json()["detail"] == "Not implemented yet"
-
-
-@pytest.mark.asyncio
 async def test_passkey_register_complete_requires_auth(client):
     resp = await client.post(
         "/api/v1/auth/passkey/register/complete",
@@ -187,11 +180,210 @@ async def test_passkey_register_complete_requires_auth(client):
     assert resp.status_code == 401
 
 
+# ── Story 2: registration flow ────────────────────────────────────────────────
+
+def _mock_redis(setex_side_effect=None, getdel_return=None):
+    """Return a (factory_mock, client_mock) pair for patching aioredis.from_url."""
+    mock_r = AsyncMock()
+    mock_r.setex = AsyncMock(side_effect=setex_side_effect)
+    mock_r.getdel = AsyncMock(return_value=getdel_return)
+    mock_r.aclose = AsyncMock()
+    factory = MagicMock(return_value=mock_r)
+    return factory, mock_r
+
+
 @pytest.mark.asyncio
-async def test_passkey_register_complete_returns_501_when_authed(client, ic_token):
-    resp = await client.post(
-        "/api/v1/auth/passkey/register/complete",
-        json={"credential": {}},
-        headers={"Authorization": f"Bearer {ic_token}"},
+async def test_register_begin_returns_options_shape(client, ic_token):
+    """begin must return a dict with challenge, rp, and user fields."""
+    factory, mock_r = _mock_redis()
+    with patch("app.routers.passkeys.aioredis.from_url", factory):
+        resp = await client.post(
+            "/api/v1/auth/passkey/register/begin",
+            json={},
+            headers={"Authorization": f"Bearer {ic_token}"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "challenge" in body
+    assert "rp" in body
+    assert body["rp"]["name"] == "GatekeeperAI"
+    assert "user" in body
+
+
+@pytest.mark.asyncio
+async def test_register_begin_stores_challenge_in_redis(client, ic_token):
+    """begin must store the challenge bytes in Redis with TTL=300."""
+    factory, mock_r = _mock_redis()
+    with patch("app.routers.passkeys.aioredis.from_url", factory):
+        resp = await client.post(
+            "/api/v1/auth/passkey/register/begin",
+            json={},
+            headers={"Authorization": f"Bearer {ic_token}"},
+        )
+
+    assert resp.status_code == 200
+    mock_r.setex.assert_called_once()
+    key, ttl, _ = mock_r.setex.call_args[0]
+    assert key.startswith("passkey:reg:")
+    assert ttl == 300
+
+
+@pytest.mark.asyncio
+async def test_register_begin_excludes_existing_credential(client, ic_token, ic_user, db):
+    """begin must include existing passkeys in exclude_credentials."""
+    suffix = uuid.uuid4().hex[:8]
+    pk = Passkey(
+        user_id=ic_user.id,
+        credential_id=b"existing-cred-" + suffix.encode(),
+        public_key=b"existing-pubkey",
+        sign_count=0,
     )
-    assert resp.status_code == 501
+    db.add(pk)
+    await db.commit()
+
+    captured_options = {}
+
+    def fake_gen(**kwargs):
+        captured_options.update(kwargs)
+        from webauthn import generate_registration_options as real_gen
+        return real_gen(**kwargs)
+
+    factory, mock_r = _mock_redis()
+    with patch("app.routers.passkeys.aioredis.from_url", factory), \
+         patch("app.routers.passkeys.generate_registration_options", side_effect=fake_gen):
+        resp = await client.post(
+            "/api/v1/auth/passkey/register/begin",
+            json={},
+            headers={"Authorization": f"Bearer {ic_token}"},
+        )
+
+    assert resp.status_code == 200
+    excl = captured_options.get("exclude_credentials", [])
+    assert any(e.id == pk.credential_id for e in excl)
+
+
+def _fake_verification(credential_id: bytes = b"new-cred-id") -> VerifiedRegistration:
+    return VerifiedRegistration(
+        credential_id=credential_id,
+        credential_public_key=b"fake-public-key",
+        sign_count=0,
+        aaguid="00000000-0000-0000-0000-000000000000",
+        fmt=AttestationFormat.NONE,
+        credential_type=PublicKeyCredentialType.PUBLIC_KEY,
+        user_verified=True,
+        attestation_object=b"fake-ao",
+        credential_device_type=CredentialDeviceType.SINGLE_DEVICE,
+        credential_backed_up=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_register_complete_happy_path(client, ic_token, db):
+    """complete must save a Passkey row and return id + device_label."""
+    factory, mock_r = _mock_redis(getdel_return=b"fake-challenge")
+    verification = _fake_verification(credential_id=b"happy-path-cred")
+
+    with patch("app.routers.passkeys.aioredis.from_url", factory), \
+         patch("app.routers.passkeys.verify_registration_response", return_value=verification):
+        resp = await client.post(
+            "/api/v1/auth/passkey/register/complete",
+            json={"credential": {}, "device_label": "My MacBook"},
+            headers={"Authorization": f"Bearer {ic_token}"},
+        )
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert "id" in body
+    assert body["device_label"] == "My MacBook"
+    assert "created_at" in body
+
+    # Passkey row must exist in DB
+    result = await db.execute(
+        text("SELECT credential_id FROM passkeys WHERE credential_id = :cid"),
+        {"cid": b"happy-path-cred"},
+    )
+    assert result.scalar_one_or_none() is not None
+
+
+@pytest.mark.asyncio
+async def test_register_complete_expired_challenge(client, ic_token):
+    """complete returns 400 when no challenge is found in Redis."""
+    factory, _ = _mock_redis(getdel_return=None)
+    with patch("app.routers.passkeys.aioredis.from_url", factory):
+        resp = await client.post(
+            "/api/v1/auth/passkey/register/complete",
+            json={"credential": {}},
+            headers={"Authorization": f"Bearer {ic_token}"},
+        )
+
+    assert resp.status_code == 400
+    assert "expired" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_register_complete_invalid_credential(client, ic_token):
+    """complete returns 400 when the webauthn library rejects the credential."""
+    from webauthn.helpers.exceptions import InvalidRegistrationResponse
+
+    factory, _ = _mock_redis(getdel_return=b"fake-challenge")
+    with patch("app.routers.passkeys.aioredis.from_url", factory), \
+         patch("app.routers.passkeys.verify_registration_response",
+               side_effect=InvalidRegistrationResponse("bad signature")):
+        resp = await client.post(
+            "/api/v1/auth/passkey/register/complete",
+            json={"credential": {}},
+            headers={"Authorization": f"Bearer {ic_token}"},
+        )
+
+    assert resp.status_code == 400
+    assert "bad signature" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_register_complete_duplicate_credential(client, ic_token, ic_user, db):
+    """complete returns 409 when the same credential is registered twice."""
+    suffix = uuid.uuid4().hex[:8]
+    cred_id = b"dup-cred-" + suffix.encode()
+
+    # Pre-insert the credential as already registered
+    pk = Passkey(
+        user_id=ic_user.id,
+        credential_id=cred_id,
+        public_key=b"existing-pubkey",
+        sign_count=0,
+    )
+    db.add(pk)
+    await db.commit()
+
+    factory, _ = _mock_redis(getdel_return=b"fake-challenge")
+    verification = _fake_verification(credential_id=cred_id)
+
+    with patch("app.routers.passkeys.aioredis.from_url", factory), \
+         patch("app.routers.passkeys.verify_registration_response", return_value=verification):
+        resp = await client.post(
+            "/api/v1/auth/passkey/register/complete",
+            json={"credential": {}},
+            headers={"Authorization": f"Bearer {ic_token}"},
+        )
+
+    assert resp.status_code == 409
+    assert "already registered" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_register_complete_challenge_consumed(client, ic_token):
+    """complete uses getdel so the challenge cannot be replayed."""
+    factory, mock_r = _mock_redis(getdel_return=b"fake-challenge")
+    verification = _fake_verification(credential_id=b"consumed-cred")
+
+    with patch("app.routers.passkeys.aioredis.from_url", factory), \
+         patch("app.routers.passkeys.verify_registration_response", return_value=verification):
+        await client.post(
+            "/api/v1/auth/passkey/register/complete",
+            json={"credential": {}},
+            headers={"Authorization": f"Bearer {ic_token}"},
+        )
+
+    # getdel must have been called (atomic fetch-and-delete)
+    mock_r.getdel.assert_called_once()
