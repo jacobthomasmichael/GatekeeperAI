@@ -2,8 +2,9 @@
 Passkey (WebAuthn) endpoints.
 
 Story 2: register/begin + register/complete (attestation).
-Story 3: authenticate/begin + authenticate/complete (assertion) — still 501.
+Story 3: authenticate/begin + authenticate/complete (assertion).
 """
+import base64
 import json
 import uuid
 from urllib.parse import urlparse
@@ -13,8 +14,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from webauthn import generate_registration_options, options_to_json, verify_registration_response
-from webauthn.helpers.exceptions import InvalidRegistrationResponse
+from webauthn import (
+    generate_authentication_options,
+    generate_registration_options,
+    options_to_json,
+    verify_authentication_response,
+    verify_registration_response,
+)
+from webauthn.helpers.exceptions import InvalidAuthenticationResponse, InvalidRegistrationResponse
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
     PublicKeyCredentialDescriptor,
@@ -27,10 +34,16 @@ from app.config import settings
 from app.deps import get_current_user, get_db
 from app.models.passkey import Passkey
 from app.models.user import User
+from app.services.auth_service import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    store_refresh_jti,
+)
 
 router = APIRouter(prefix="/auth/passkey", tags=["passkeys"])
 
-_CHALLENGE_TTL = 300  # seconds — registration window
+_CHALLENGE_TTL = 300  # seconds
 
 
 def _rp_id() -> str:
@@ -39,6 +52,14 @@ def _rp_id() -> str:
 
 def _origin() -> str:
     return settings.APP_BASE_URL.rstrip("/")
+
+
+def _b64url_decode(s: str) -> bytes:
+    s = s.replace("-", "+").replace("_", "/")
+    pad = 4 - len(s) % 4
+    if pad != 4:
+        s += "=" * pad
+    return base64.b64decode(s)
 
 
 # ── Request / response schemas ────────────────────────────────────────────────
@@ -69,15 +90,11 @@ async def passkey_register_begin(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Generate a WebAuthn registration challenge for the authenticated user."""
-    # Fetch existing passkeys to exclude (prevents re-registering the same device)
     result = await db.execute(select(Passkey).where(Passkey.user_id == current_user.id))
     existing_passkeys = result.scalars().all()
 
     exclude_credentials = [
-        PublicKeyCredentialDescriptor(
-            type=PublicKeyCredentialType.PUBLIC_KEY,
-            id=pk.credential_id,
-        )
+        PublicKeyCredentialDescriptor(type=PublicKeyCredentialType.PUBLIC_KEY, id=pk.credential_id)
         for pk in existing_passkeys
     ]
 
@@ -133,7 +150,6 @@ async def passkey_register_complete(
     except InvalidRegistrationResponse as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
-    # Guard against duplicate credentials (e.g. concurrent registration attempts)
     dup = await db.execute(
         select(Passkey).where(Passkey.credential_id == verification.credential_id)
     )
@@ -158,19 +174,99 @@ async def passkey_register_complete(
     }
 
 
-# ── Authentication (Story 3) ──────────────────────────────────────────────────
+# ── Authentication ────────────────────────────────────────────────────────────
 
 @router.post("/authenticate/begin", status_code=status.HTTP_200_OK)
 async def passkey_authenticate_begin(
     body: AuthenticateBeginRequest,
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Generate a WebAuthn authentication challenge for the given email."""
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not implemented yet")
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No account found with that email")
+
+    result = await db.execute(select(Passkey).where(Passkey.user_id == user.id))
+    passkeys = result.scalars().all()
+    if not passkeys:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No passkeys registered for this account",
+        )
+
+    allow_credentials = [
+        PublicKeyCredentialDescriptor(type=PublicKeyCredentialType.PUBLIC_KEY, id=pk.credential_id)
+        for pk in passkeys
+    ]
+
+    options = generate_authentication_options(
+        rp_id=_rp_id(),
+        allow_credentials=allow_credentials,
+        user_verification=UserVerificationRequirement.REQUIRED,
+    )
+
+    r = aioredis.from_url(settings.REDIS_URL, decode_responses=False)
+    try:
+        await r.setex(f"passkey:auth:{user.id}", _CHALLENGE_TTL, options.challenge)
+    finally:
+        await r.aclose()
+
+    return json.loads(options_to_json(options))
 
 
 @router.post("/authenticate/complete", status_code=status.HTTP_200_OK)
 async def passkey_authenticate_complete(
     body: AuthenticateCompleteRequest,
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Verify assertion and return access + refresh tokens."""
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not implemented yet")
+    """Verify assertion, update sign count, and return access + refresh tokens."""
+    try:
+        cred_id_bytes = _b64url_decode(body.credential["id"])
+    except (KeyError, Exception):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid credential format")
+
+    result = await db.execute(select(Passkey).where(Passkey.credential_id == cred_id_bytes))
+    passkey = result.scalar_one_or_none()
+    if not passkey:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Credential not recognized")
+
+    r = aioredis.from_url(settings.REDIS_URL, decode_responses=False)
+    try:
+        challenge: bytes | None = await r.getdel(f"passkey:auth:{passkey.user_id}")
+    finally:
+        await r.aclose()
+
+    if not challenge:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authentication session expired — please start over",
+        )
+
+    try:
+        verification = verify_authentication_response(
+            credential=body.credential,
+            expected_challenge=challenge,
+            expected_rp_id=_rp_id(),
+            expected_origin=_origin(),
+            credential_public_key=passkey.public_key,
+            credential_current_sign_count=passkey.sign_count,
+            require_user_verification=True,
+        )
+    except InvalidAuthenticationResponse as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    # Update sign count — protects against cloned authenticators
+    passkey.sign_count = verification.new_sign_count
+    await db.commit()
+
+    user = await db.get(User, passkey.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+
+    refresh_token = create_refresh_token(str(user.id))
+    token_data = decode_token(refresh_token)
+    store_refresh_jti(token_data["jti"], str(user.id))
+    access_token = create_access_token(str(user.id), user.email, user.role)
+
+    return {"access_token": access_token, "refresh_token": refresh_token}

@@ -141,25 +141,6 @@ async def test_passkey_deleted_on_user_delete(db):
 
 # ── Stub endpoint tests ───────────────────────────────────────────────────────
 
-@pytest.mark.asyncio
-async def test_passkey_authenticate_begin_returns_501(client):
-    """No auth required — but must return 501 until Story 3 is implemented."""
-    resp = await client.post(
-        "/api/v1/auth/passkey/authenticate/begin",
-        json={"email": "anyone@example.com"},
-    )
-    assert resp.status_code == 501
-    assert resp.json()["detail"] == "Not implemented yet"
-
-
-@pytest.mark.asyncio
-async def test_passkey_authenticate_complete_returns_501(client):
-    resp = await client.post(
-        "/api/v1/auth/passkey/authenticate/complete",
-        json={"credential": {}},
-    )
-    assert resp.status_code == 501
-
 
 @pytest.mark.asyncio
 async def test_passkey_register_begin_requires_auth(client):
@@ -387,3 +368,257 @@ async def test_register_complete_challenge_consumed(client, ic_token):
 
     # getdel must have been called (atomic fetch-and-delete)
     mock_r.getdel.assert_called_once()
+
+
+# ── Story 3: authentication flow ──────────────────────────────────────────────
+
+import base64
+import dataclasses
+from webauthn.authentication.verify_authentication_response import VerifiedAuthentication
+from webauthn.helpers.structs import CredentialDeviceType
+
+
+def _b64url_encode(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def _seeded_passkey(user_id: uuid.UUID, cred_id: bytes) -> Passkey:
+    return Passkey(
+        user_id=user_id,
+        credential_id=cred_id,
+        public_key=b"stored-public-key",
+        sign_count=5,
+        device_label="Test Device",
+    )
+
+
+def _fake_auth_verification(new_sign_count: int = 6) -> VerifiedAuthentication:
+    return VerifiedAuthentication(
+        credential_id=b"auth-cred-id",
+        new_sign_count=new_sign_count,
+        credential_device_type=CredentialDeviceType.SINGLE_DEVICE,
+        credential_backed_up=False,
+        user_verified=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_authenticate_begin_unknown_email(client):
+    """begin returns 404 for an email that has no account."""
+    resp = await client.post(
+        "/api/v1/auth/passkey/authenticate/begin",
+        json={"email": "ghost@example.com"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_authenticate_begin_no_passkeys(client, ic_user):
+    """begin returns 400 when the user exists but has no passkeys enrolled."""
+    factory, _ = _mock_redis()
+    with patch("app.routers.passkeys.aioredis.from_url", factory):
+        resp = await client.post(
+            "/api/v1/auth/passkey/authenticate/begin",
+            json={"email": ic_user.email},
+        )
+    assert resp.status_code == 400
+    assert "no passkeys" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_authenticate_begin_returns_options_shape(client, ic_user, db):
+    """begin returns a dict with challenge and allowCredentials."""
+    cred_id = b"auth-begin-cred"
+    db.add(_seeded_passkey(ic_user.id, cred_id))
+    await db.commit()
+
+    factory, _ = _mock_redis()
+    with patch("app.routers.passkeys.aioredis.from_url", factory):
+        resp = await client.post(
+            "/api/v1/auth/passkey/authenticate/begin",
+            json={"email": ic_user.email},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "challenge" in body
+    assert "allowCredentials" in body
+    assert len(body["allowCredentials"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_authenticate_begin_stores_challenge_in_redis(client, ic_user, db):
+    """begin must store the challenge in Redis under passkey:auth:{user_id}."""
+    db.add(_seeded_passkey(ic_user.id, b"begin-store-cred"))
+    await db.commit()
+
+    factory, mock_r = _mock_redis()
+    with patch("app.routers.passkeys.aioredis.from_url", factory):
+        resp = await client.post(
+            "/api/v1/auth/passkey/authenticate/begin",
+            json={"email": ic_user.email},
+        )
+
+    assert resp.status_code == 200
+    mock_r.setex.assert_called_once()
+    key, ttl, _ = mock_r.setex.call_args[0]
+    assert key == f"passkey:auth:{ic_user.id}"
+    assert ttl == 300
+
+
+@pytest.mark.asyncio
+async def test_authenticate_complete_happy_path(client, ic_user, db):
+    """complete verifies assertion, updates sign_count, and returns tokens."""
+    cred_id = b"complete-happy-cred"
+    passkey = _seeded_passkey(ic_user.id, cred_id)
+    db.add(passkey)
+    await db.commit()
+
+    factory, _ = _mock_redis(getdel_return=b"fake-challenge")
+    verification = _fake_auth_verification(new_sign_count=6)
+
+    with patch("app.routers.passkeys.aioredis.from_url", factory), \
+         patch("app.routers.passkeys.verify_authentication_response", return_value=verification):
+        resp = await client.post(
+            "/api/v1/auth/passkey/authenticate/complete",
+            json={"credential": {"id": _b64url_encode(cred_id)}},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "access_token" in body
+    assert "refresh_token" in body
+
+    # sign_count must be updated
+    await db.refresh(passkey)
+    assert passkey.sign_count == 6
+
+
+@pytest.mark.asyncio
+async def test_authenticate_complete_expired_challenge(client, ic_user, db):
+    """complete returns 400 when no challenge found in Redis."""
+    cred_id = b"expired-chal-cred"
+    db.add(_seeded_passkey(ic_user.id, cred_id))
+    await db.commit()
+
+    factory, _ = _mock_redis(getdel_return=None)
+    with patch("app.routers.passkeys.aioredis.from_url", factory):
+        resp = await client.post(
+            "/api/v1/auth/passkey/authenticate/complete",
+            json={"credential": {"id": _b64url_encode(cred_id)}},
+        )
+
+    assert resp.status_code == 400
+    assert "expired" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_authenticate_complete_unknown_credential(client):
+    """complete returns 400 when the credential_id isn't in the DB."""
+    factory, _ = _mock_redis(getdel_return=b"fake-challenge")
+    with patch("app.routers.passkeys.aioredis.from_url", factory):
+        resp = await client.post(
+            "/api/v1/auth/passkey/authenticate/complete",
+            json={"credential": {"id": _b64url_encode(b"no-such-cred")}},
+        )
+
+    assert resp.status_code == 400
+    assert "not recognized" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_authenticate_complete_invalid_assertion(client, ic_user, db):
+    """complete returns 400 when the webauthn library rejects the assertion."""
+    from webauthn.helpers.exceptions import InvalidAuthenticationResponse
+
+    cred_id = b"bad-assertion-cred"
+    db.add(_seeded_passkey(ic_user.id, cred_id))
+    await db.commit()
+
+    factory, _ = _mock_redis(getdel_return=b"fake-challenge")
+    with patch("app.routers.passkeys.aioredis.from_url", factory), \
+         patch("app.routers.passkeys.verify_authentication_response",
+               side_effect=InvalidAuthenticationResponse("signature mismatch")):
+        resp = await client.post(
+            "/api/v1/auth/passkey/authenticate/complete",
+            json={"credential": {"id": _b64url_encode(cred_id)}},
+        )
+
+    assert resp.status_code == 400
+    assert "signature mismatch" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_authenticate_complete_disabled_user(client, db):
+    """complete returns 403 when the account is disabled."""
+    suffix = uuid.uuid4().hex[:8]
+    user = User(
+        email=f"disabled_{suffix}@example.com",
+        username=f"disabled_{suffix}",
+        hashed_password=None,
+        role="ic",
+        is_active=False,
+    )
+    db.add(user)
+    await db.flush()
+
+    cred_id = b"disabled-user-cred-" + suffix.encode()
+    db.add(_seeded_passkey(user.id, cred_id))
+    await db.commit()
+
+    factory, _ = _mock_redis(getdel_return=b"fake-challenge")
+    verification = _fake_auth_verification()
+    with patch("app.routers.passkeys.aioredis.from_url", factory), \
+         patch("app.routers.passkeys.verify_authentication_response", return_value=verification):
+        resp = await client.post(
+            "/api/v1/auth/passkey/authenticate/complete",
+            json={"credential": {"id": _b64url_encode(cred_id)}},
+        )
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_authenticate_complete_challenge_consumed(client, ic_user, db):
+    """complete uses getdel — challenge cannot be replayed."""
+    cred_id = b"consumed-auth-cred"
+    db.add(_seeded_passkey(ic_user.id, cred_id))
+    await db.commit()
+
+    factory, mock_r = _mock_redis(getdel_return=b"fake-challenge")
+    verification = _fake_auth_verification()
+    with patch("app.routers.passkeys.aioredis.from_url", factory), \
+         patch("app.routers.passkeys.verify_authentication_response", return_value=verification):
+        await client.post(
+            "/api/v1/auth/passkey/authenticate/complete",
+            json={"credential": {"id": _b64url_encode(cred_id)}},
+        )
+
+    mock_r.getdel.assert_called_once()
+    key = mock_r.getdel.call_args[0][0]
+    assert key == f"passkey:auth:{ic_user.id}"
+
+
+@pytest.mark.asyncio
+async def test_authenticate_complete_tokens_are_valid(client, ic_user, db):
+    """Tokens returned by complete must pass /auth/me verification."""
+    cred_id = b"token-valid-cred"
+    db.add(_seeded_passkey(ic_user.id, cred_id))
+    await db.commit()
+
+    factory, _ = _mock_redis(getdel_return=b"fake-challenge")
+    verification = _fake_auth_verification()
+    with patch("app.routers.passkeys.aioredis.from_url", factory), \
+         patch("app.routers.passkeys.verify_authentication_response", return_value=verification):
+        resp = await client.post(
+            "/api/v1/auth/passkey/authenticate/complete",
+            json={"credential": {"id": _b64url_encode(cred_id)}},
+        )
+
+    access_token = resp.json()["access_token"]
+    me = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert me.status_code == 200
+    assert me.json()["email"] == ic_user.email
