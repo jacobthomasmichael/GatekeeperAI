@@ -174,6 +174,40 @@ async def passkey_register_complete(
     }
 
 
+# ── Passkey management ────────────────────────────────────────────────────────
+
+@router.get("/", status_code=status.HTTP_200_OK)
+async def list_passkeys(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List all passkeys enrolled by the current user."""
+    result = await db.execute(
+        select(Passkey).where(Passkey.user_id == current_user.id).order_by(Passkey.created_at)
+    )
+    return [
+        {"id": str(pk.id), "device_label": pk.device_label, "created_at": pk.created_at.isoformat()}
+        for pk in result.scalars().all()
+    ]
+
+
+@router.delete("/{passkey_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_passkey(
+    passkey_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Remove one of the current user's passkeys."""
+    result = await db.execute(
+        select(Passkey).where(Passkey.id == passkey_id, Passkey.user_id == current_user.id)
+    )
+    passkey = result.scalar_one_or_none()
+    if not passkey:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Passkey not found")
+    await db.delete(passkey)
+    await db.commit()
+
+
 # ── Authentication ────────────────────────────────────────────────────────────
 
 @router.post("/authenticate/begin", status_code=status.HTTP_200_OK)

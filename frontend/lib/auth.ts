@@ -70,10 +70,18 @@ export function useAuth() {
     [fetchMe]
   );
 
+  const loginWithTokens = useCallback(
+    async (accessToken: string, refreshToken: string) => {
+      storeTokens(accessToken, refreshToken);
+      await fetchMe();
+    },
+    [fetchMe]
+  );
+
   const logout = useCallback(() => {
     clearAuth();
     setUser(null);
   }, []);
 
-  return { user, loading, login, logout, refresh: fetchMe };
+  return { user, loading, login, loginWithTokens, logout, refresh: fetchMe };
 }
