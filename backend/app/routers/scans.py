@@ -2,8 +2,9 @@ import hmac
 import json
 import uuid
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +14,31 @@ from app.models.app_submission import AppSubmission
 from app.models.scan import Scan, ScanResult
 from app.models.user import User
 from app.schemas.scan import ScanTriggerRequest, ScanResponse, ScanResultResponse
+from app.services.auth_service import decode_token
+
+_bearer_optional = HTTPBearer(auto_error=False)
+
+
+async def _get_user_for_stream(
+    token: str | None = Query(default=None),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_optional),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Auth for SSE endpoints: accepts token via query param (EventSource) or Authorization header."""
+    raw = token or (credentials.credentials if credentials else None)
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    try:
+        payload = decode_token(raw)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+    result = await db.execute(select(User).where(User.id == payload["sub"]))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return user
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
@@ -87,7 +113,8 @@ async def get_scan(
 @router.get("/{scan_id}/stream")
 async def stream_scan_events(
     scan_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_get_user_for_stream),
+    db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """SSE stream of real-time scanner progress events."""
     import redis.asyncio as aioredis
@@ -96,8 +123,25 @@ async def stream_scan_events(
         r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
         pubsub = r.pubsub()
         channel = f"scan:{scan_id}:events"
+
+        # Subscribe BEFORE checking DB so we don't miss an event published
+        # between the DB read and the subscribe call.
         await pubsub.subscribe(channel)
+
         try:
+            # If the scan already finished before we connected, Redis pubsub
+            # won't replay the complete event. Detect this and synthesize one.
+            result = await db.execute(select(Scan).where(Scan.id == scan_id))
+            scan = result.scalar_one_or_none()
+            if scan and scan.status in ("complete", "failed"):
+                evt = json.dumps({
+                    "event": scan.status if scan.status == "failed" else "complete",
+                    "risk_tier": scan.risk_tier,
+                    "risk_score": scan.risk_score,
+                })
+                yield f"data: {evt}\n\n"
+                return
+
             async for message in pubsub.listen():
                 if message["type"] == "message":
                     yield f"data: {message['data']}\n\n"
