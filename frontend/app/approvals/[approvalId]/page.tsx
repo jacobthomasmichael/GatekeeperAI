@@ -4,25 +4,9 @@ import { useEffect, useState, FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { approvalsApi, type ApprovalDetail, ApiError } from "@/lib/api";
 import RiskBadge from "@/components/RiskBadge";
+import ScanResultCard from "@/components/ScanResultCard";
 import { ArrowLeft, CheckCircle, XCircle } from "lucide-react";
 import clsx from "clsx";
-
-const SCANNER_LABELS: Record<string, string> = {
-  secrets: "Secrets",
-  dependencies: "Dependencies",
-  egress: "Egress URLs",
-  pii: "PII Detection",
-  llm: "AI Analysis",
-};
-
-const SEV_COLOR: Record<string, string> = {
-  critical: "text-red-600 dark:text-red-400",
-  high:     "text-orange-600 dark:text-orange-400",
-  medium:   "text-amber-600 dark:text-amber-400",
-  low:      "text-emerald-600 dark:text-emerald-400",
-  none:     "text-gray-400 dark:text-slate-500",
-  info:     "text-gray-400 dark:text-slate-500",
-};
 
 export default function ApprovalDetailPage() {
   const { approvalId } = useParams<{ approvalId: string }>();
@@ -116,30 +100,7 @@ export default function ApprovalDetailPage() {
         <h2 className="text-sm font-medium text-gray-500 dark:text-slate-400 mb-3">Scanner Results</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {approval.scan_results.map((r) => (
-            <div
-              key={r.id}
-              className="rounded-lg border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4"
-            >
-              <div className="flex items-start justify-between mb-2">
-                <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">
-                  {SCANNER_LABELS[r.scanner_name] ?? r.scanner_name}
-                </span>
-                <span className={clsx("text-xs font-medium", SEV_COLOR[r.severity] ?? "text-gray-400 dark:text-slate-400")}>
-                  {r.severity}
-                </span>
-              </div>
-              <div className="text-xs text-gray-300 dark:text-slate-600">{r.duration_ms}ms</div>
-              {Object.keys(r.findings).length > 0 && (
-                <details className="mt-2">
-                  <summary className="text-xs text-indigo-600 dark:text-indigo-400 cursor-pointer select-none">
-                    View findings
-                  </summary>
-                  <pre className="mt-2 text-xs text-gray-500 dark:text-slate-400 whitespace-pre-wrap break-all overflow-auto max-h-40">
-                    {JSON.stringify(r.findings, null, 2)}
-                  </pre>
-                </details>
-              )}
-            </div>
+            <ScanResultCard key={r.id} result={r} />
           ))}
         </div>
       </div>
