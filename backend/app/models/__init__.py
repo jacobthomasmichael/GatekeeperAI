@@ -5,6 +5,7 @@ from app.models.approval import Approval
 from app.models.deployment import Deployment
 from app.models.audit_log import AuditLog
 from app.models.secret_store import SecretStore
+from app.models.passkey import Passkey
 
 __all__ = [
     "User",
@@ -15,4 +16,5 @@ __all__ = [
     "Deployment",
     "AuditLog",
     "SecretStore",
+    "Passkey",
 ]
