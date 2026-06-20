@@ -228,8 +228,22 @@ export interface Deployment {
 // ── Auth API ─────────────────────────────────────────────────────────────────
 
 export const authApi = {
-  login: (email: string, password: string) =>
-    api.post<TokenResponse>("/auth/login", { email, password }),
+  // Bypass the shared request() so a 401 (wrong password) returns the actual
+  // "Invalid email or password" detail instead of "Session expired".
+  login: async (email: string, password: string): Promise<TokenResponse> => {
+    const res = await fetch(`${BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      let detail = text;
+      try { detail = JSON.parse(text)?.detail ?? text; } catch {}
+      throw new ApiError(res.status, detail);
+    }
+    return res.json();
+  },
   me: () => api.get<User>("/auth/me"),
 };
 
