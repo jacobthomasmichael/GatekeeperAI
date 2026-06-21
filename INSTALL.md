@@ -268,6 +268,42 @@ Any SSH keys you added to `infra/authorized_keys` are preserved across restarts.
 
 ---
 
+## Observability (optional)
+
+GatekeeperAI ships with built-in **OpenTelemetry** instrumentation. Every HTTP request, database query, Celery task (scan pipeline, deploy, SLA checks), and Redis call is automatically traced. By default, traces are discarded so no extra software is required to run GatekeeperAI.
+
+To send traces to a real backend, add one line to your `.env` file:
+
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4318
+```
+
+Then restart GatekeeperAI:
+
+```
+docker compose -f infra/docker-compose.yml up -d
+```
+
+**Compatible backends (any OTLP-over-HTTP collector works):**
+
+| Backend | Notes |
+|---|---|
+| **Grafana Tempo** | Free, self-hosted; pairs well with Grafana dashboards |
+| **Honeycomb** | Hosted SaaS, generous free tier |
+| **Datadog** | Enterprise; set endpoint to `https://trace.agent.datadoghq.com` |
+| **Jaeger** | Free, self-hosted; good for smaller deployments |
+| **New Relic** | Hosted SaaS; set endpoint to your New Relic OTLP ingest URL |
+
+You can also customize the service name that appears in your tracing backend (default is `gatekeeperai`):
+
+```
+OTEL_SERVICE_NAME=my-gatekeeper-instance
+```
+
+> **Not sure which backend to use?** Grafana Tempo is the easiest self-hosted option and is free. Honeycomb has the best free hosted tier for getting started quickly.
+
+---
+
 ## Troubleshooting
 
 **"Docker is not running"**

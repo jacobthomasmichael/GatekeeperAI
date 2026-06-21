@@ -26,6 +26,7 @@ GatekeeperAI is an on-premises platform that lets enterprise teams safely adopt 
 - **Admin panel** — user management (create, disable, change roles), audit log viewer, platform-wide metrics
 - **Setup wizard** — first-run wizard configures the instance with no config-file editing required
 - **Secure by default** — JWT with refresh token rotation, rate limiting on all endpoints, security headers (CSP, HSTS, etc.), non-root containers
+- **OpenTelemetry instrumentation** — distributed tracing across FastAPI, SQLAlchemy, Celery, and Redis; ships to any OTLP-compatible backend (Grafana Tempo, Honeycomb, Datadog, Jaeger) via a single env var
 
 ---
 
@@ -38,7 +39,8 @@ GatekeeperAI is an on-premises platform that lets enterprise teams safely adopt 
 | Container runtime | Docker SDK (Python) |
 | LLM | Anthropic Claude API |
 | Frontend | Next.js 16 (App Router) + Tailwind CSS |
-| Auth | JWT (access + refresh) with Redis-backed JTI rotation |
+| Auth | JWT (access + refresh) + WebAuthn passkeys |
+| Observability | OpenTelemetry (OTLP export to any compatible backend) |
 
 ---
 
