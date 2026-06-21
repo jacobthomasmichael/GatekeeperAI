@@ -31,6 +31,15 @@ backend/            FastAPI API + Celery workers + scanners
     routers/        FastAPI route handlers (one file per domain)
     scanners/       Security scanner implementations + Celery scan task
     services/       Thin service layer called by routers and tasks
+                  approval_service.py  — SLA deadline calculation
+                  auth_service.py      — password hashing, JWT encode/decode
+                  container_service.py — Docker SDK wrapper (build, run, stop, health)
+                  dockerfile_service.py — generates Dockerfiles per app type
+                  git_service.py       — zip → bare repo, zip flattening
+                  log_forwarder.py     — async audit log dispatch (daemon thread, never blocks)
+                  nginx_service.py     — writes/removes per-app nginx configs
+                  notification_service.py — SMTP email for approvers
+                  secrets_service.py   — Fernet encrypt/decrypt per-app secrets
     middleware/     AuditMiddleware, SecurityHeadersMiddleware
   worker/
     celery_app.py   Celery app definition + Beat schedule
@@ -38,8 +47,12 @@ backend/            FastAPI API + Celery workers + scanners
     sla_task.py     Celery Beat task — flags overdue approvals
   alembic/          DB migrations
   tests/            pytest suite (runs against a real test DB)
+  scripts/
+    seed_review_apps.py   populate the DB with demo apps for local testing
 
 frontend/           Next.js 16 App Router
+  AGENTS.md         ⚠ Read this before touching frontend code — documents breaking
+                    Next.js API changes that differ from training data
   app/
     login/          Passkey-first login page
     setup/          First-run wizard
@@ -76,7 +89,7 @@ INSTALL.md          End-user installation guide (non-technical audience)
 | Container runtime | Docker SDK (Python) | `container_service.py` wraps the SDK |
 | LLM | Anthropic Claude API | Used in `llm_scanner.py` for code review |
 | Frontend | Next.js 16 (App Router) + Tailwind CSS v3 | webpack, not Turbopack |
-| Auth | JWT (access + refresh) + WebAuthn passkeys | Refresh tokens are JTI-tracked in Redis |
+| Auth | JWT (access + refresh) + WebAuthn passkeys | 60-min access / 30-day refresh; JTI tracked in Redis |
 | Observability | OpenTelemetry 1.42 | OTLP HTTP export, no-op when endpoint not set |
 | CI | GitHub Actions | `.github/workflows/publish.yml` builds + pushes to GHCR on every push to main |
 
@@ -97,11 +110,19 @@ All config lives in `.env` (copy from `.env.example`). Key vars:
 | `NEXT_PUBLIC_API_URL` | Yes (prod) | Browser-facing API URL |
 | `HOOK_SECRET` | Yes (prod) | Authenticates the git post-receive hook to the API |
 | `ENVIRONMENT` | Yes | `development` or `production` — gates some security checks |
+| `NEXT_PUBLIC_API_URL` | Build-time | **Baked into the Next.js bundle at build time** — changing it requires a frontend rebuild, not just a restart |
+| `GIT_SSH_HOST` | Set by compose | Hostname used in dashboard git URLs (default `localhost`) |
+| `GIT_SSH_PORT` | Set by compose | SSH port for git push (default `2222`, not 22) |
+| `HOOK_CALLBACK_URL` | Set by compose | Internal URL the git post-receive hook calls back to (default `http://api:8000`) |
+| `GIT_REPOS_BASE_PATH` | Set by compose | Mount path for bare git repos volume (default `/git-repos`) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | No | JWT access token lifetime (default 60) |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | No | JWT refresh token lifetime (default 30) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | OTLP HTTP endpoint; omit to discard traces |
 | `OTEL_SERVICE_NAME` | No | Defaults to `gatekeeperai` |
 | `SMTP_*` | No | Email notifications for approvers |
 | `LOG_FORWARD_*` | No | Audit log forwarding (Splunk, Loki, CloudWatch, syslog) |
 | `DOCKER_GID` | Linux only | GID of the docker group; needed so the worker can access the Docker socket |
+| `RATELIMIT_ENABLED` | Test only | Set to `0` in `tests/conftest.py` to disable rate limiting during tests |
 
 ---
 
@@ -146,6 +167,7 @@ alembic upgrade head
    - `egress_scanner.py` — static analysis for outbound URLs
    - `pii_scanner.py` — regex patterns for PII
    - `llm_scanner.py` — Claude code review via Anthropic API
+   - `base.py` — shared `ScanContext` and `ScanResult` dataclasses (not a scanner itself)
 4. `risk_engine.py` aggregates findings → risk score (0–100) + tier (low/medium/high/critical)
 5. Writes scan record to DB; publishes final `complete` SSE event
 
@@ -186,7 +208,7 @@ Detection reads `requirements.txt` for Python apps and `package.json` for Node. 
 ## Auth model
 
 - **Login:** email + password OR passkey (WebAuthn). Passkey is the default UI flow.
-- **Tokens:** short-lived access JWT (15 min) + long-lived refresh JWT (7 days). Refresh tokens are tracked by JTI in Redis; logout invalidates the JTI.
+- **Tokens:** access JWT (60 min, `ACCESS_TOKEN_EXPIRE_MINUTES`) + refresh JWT (30 days, `REFRESH_TOKEN_EXPIRE_DAYS`). Refresh tokens are tracked by JTI in Redis; logout invalidates the JTI.
 - **Passkeys:** stored in `passkeys` table. `@simplewebauthn/server` on the backend, `@simplewebauthn/browser` on the frontend (dynamic import).
 - **Per-request auth:** `deps.py` → `get_current_user` decodes the access JWT from the `Authorization: Bearer` header.
 - **nginx auth_request:** every request to a deployed app hits `GET /api/v1/auth/verify?app={safe_name}` before being proxied. The verify endpoint checks JWT + per-app `allowed_users` allowlist.
@@ -239,7 +261,8 @@ pip install -r requirements.txt
 # Postgres must be running on port 5433; Redis on 6379
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
-celery -A worker.celery_app worker --loglevel=info   # separate terminal
+celery -A worker.celery_app.celery_app worker --loglevel=info   # separate terminal
+celery -A worker.celery_app.celery_app beat --loglevel=info     # separate terminal (SLA checks)
 ```
 
 **Frontend:**
@@ -254,6 +277,10 @@ npm run dev   # http://localhost:3000
 cp .env.example .env   # fill in SECRET_KEY, SECRET_ENCRYPTION_KEY, ANTHROPIC_API_KEY
 docker compose -f infra/docker-compose.yml up --build
 ```
+
+> **nginx runs in the `production` profile only.** In the default compose setup nginx is not started — the frontend and API are accessed directly on ports 3000 and 8000. To include nginx: `docker compose -f infra/docker-compose.yml --profile production up`.
+
+> **Git SSH runs on port 2222.** The `git` service exposes SSH on port 2222 (not 22) to avoid requiring root. Add your public key to `infra/authorized_keys` and clone with `git clone ssh://git@localhost:2222/git-repos/<app-name>.git`.
 
 ---
 
@@ -306,6 +333,8 @@ sudo docker compose -f infra/docker-compose.yml up -d
 
 ## Common gotchas
 
+- **Three separate Celery processes.** The compose stack runs `api`, `worker`, and `beat` as separate containers. Locally you need three terminals: uvicorn, `celery worker`, and `celery beat`. Missing `beat` means SLA checks never run.
+- **nginx is production-profile-only.** `docker compose up` (no profile) skips nginx entirely. Add `--profile production` to include it.
 - **Tailwind v4 / Turbopack are not used.** arm64 binary signing issues blocked both. Stick with Tailwind v3 and webpack.
 - **Postgres runs on 5433 locally**, not 5432, to avoid conflicts with a local Postgres installation.
 - **Docker socket access on Linux** — the worker container needs `DOCKER_GID` set to the host docker group GID so it can call the Docker API.
