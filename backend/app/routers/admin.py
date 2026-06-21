@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, require_admin
 from app.models.audit_log import AuditLog
+from app.models.passkey import Passkey
 from app.models.user import User
 from app.schemas.user import UserResponse
 from app.services.auth_service import hash_password
@@ -19,7 +20,7 @@ _VALID_ROLES = {"ic", "approver", "admin"}
 class UserCreate(BaseModel):
     email: EmailStr
     username: str
-    password: str
+    password: str | None = None
     role: str = "ic"
 
     @field_validator("username")
@@ -33,8 +34,8 @@ class UserCreate(BaseModel):
 
     @field_validator("password")
     @classmethod
-    def password_strength(cls, v: str) -> str:
-        if len(v) < 8:
+    def password_strength(cls, v: str | None) -> str | None:
+        if v is not None and len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
 
@@ -81,7 +82,7 @@ async def create_user(
     user = User(
         email=payload.email,
         username=payload.username,
-        hashed_password=hash_password(payload.password),
+        hashed_password=hash_password(payload.password) if payload.password else None,
         role=payload.role,
     )
     db.add(user)
@@ -149,3 +150,16 @@ async def list_audit_logs(
             for log in logs
         ],
     }
+
+
+@router.delete("/users/{user_id}/passkeys", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_user_passkeys(
+    user_id: uuid.UUID,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Remove all passkeys for a user — account recovery for locked-out accounts."""
+    result = await db.execute(select(Passkey).where(Passkey.user_id == user_id))
+    for pk in result.scalars().all():
+        await db.delete(pk)
+    await db.commit()

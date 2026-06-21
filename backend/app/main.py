@@ -10,7 +10,7 @@ from slowapi.util import get_remote_address
 from app.config import settings
 from app.middleware.audit_middleware import AuditMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import auth, apps, scans, approvals, deployments, secrets, setup, admin
+from app.routers import auth, apps, scans, approvals, deployments, secrets, setup, admin, passkeys
 
 _logger = logging.getLogger("gatekeeper.startup")
 
@@ -67,6 +67,7 @@ app.include_router(deployments.router, prefix=API_PREFIX)
 app.include_router(secrets.router, prefix=API_PREFIX)
 app.include_router(setup.router, prefix=API_PREFIX)
 app.include_router(admin.router, prefix=API_PREFIX)
+app.include_router(passkeys.router, prefix=API_PREFIX)
 
 
 @app.get("/health")

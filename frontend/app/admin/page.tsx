@@ -6,6 +6,7 @@ import {
   deploymentsApi,
   appsApi,
   adminApi,
+  ApiError,
   type ApprovalStats,
   type Deployment,
   type AppSubmission,
@@ -207,6 +208,7 @@ function UsersTab() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ email: "", username: "", password: "", role: "ic" });
+  const [resettingPasskeys, setResettingPasskeys] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [updating, setUpdating] = useState<string | null>(null);
@@ -223,7 +225,8 @@ function UsersTab() {
     setCreating(true);
     setError("");
     try {
-      const u = await adminApi.createUser(form);
+      const payload = { ...form, password: form.password || undefined };
+      const u = await adminApi.createUser(payload);
       setUsers((prev) => [...prev, u]);
       setForm({ email: "", username: "", password: "", role: "ic" });
       setShowCreate(false);
@@ -231,6 +234,18 @@ function UsersTab() {
       setError(err instanceof Error ? err.message : "Failed to create user");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleResetPasskeys = async (user: User) => {
+    if (!confirm(`Remove all passkeys for ${user.email}? They will need to re-enroll.`)) return;
+    setResettingPasskeys(user.id);
+    try {
+      await adminApi.resetPasskeys(user.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to reset passkeys");
+    } finally {
+      setResettingPasskeys(null);
     }
   };
 
@@ -301,10 +316,11 @@ function UsersTab() {
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 dark:text-slate-500 mb-1">Password</label>
+              <label className="block text-xs text-gray-400 dark:text-slate-500 mb-1">
+                Password <span className="text-gray-300 dark:text-slate-600 font-normal">(optional — user can enroll a passkey)</span>
+              </label>
               <input
                 type="password"
-                required
                 className={inputCls}
                 value={form.password}
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
@@ -339,6 +355,7 @@ function UsersTab() {
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Role</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Joined</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Status</th>
+              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
@@ -374,6 +391,16 @@ function UsersTab() {
                     }`}
                   >
                     {user.is_active ? "Active" : "Disabled"}
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => handleResetPasskeys(user)}
+                    disabled={resettingPasskeys === user.id}
+                    title="Remove all passkeys (account recovery)"
+                    className="rounded-md px-2.5 py-1 text-xs text-gray-400 dark:text-slate-500 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors disabled:opacity-50"
+                  >
+                    Reset passkeys
                   </button>
                 </td>
               </tr>

@@ -247,6 +247,27 @@ export const authApi = {
   me: () => api.get<User>("/auth/me"),
 };
 
+// ── Passkey API ───────────────────────────────────────────────────────────────
+
+export interface PasskeyEntry {
+  id: string;
+  device_label: string | null;
+  created_at: string;
+}
+
+export const passkeyApi = {
+  registerBegin: (device_label?: string) =>
+    api.post<Record<string, unknown>>("/auth/passkey/register/begin", { device_label }),
+  registerComplete: (credential: unknown, device_label?: string) =>
+    api.post<PasskeyEntry>("/auth/passkey/register/complete", { credential, device_label }),
+  authenticateBegin: (email: string) =>
+    api.post<Record<string, unknown>>("/auth/passkey/authenticate/begin", { email }),
+  authenticateComplete: (credential: unknown) =>
+    api.post<TokenResponse>("/auth/passkey/authenticate/complete", { credential }),
+  list: () => api.get<PasskeyEntry[]>("/auth/passkey/"),
+  delete: (passkeyId: string) => api.delete<void>(`/auth/passkey/${passkeyId}`),
+};
+
 // ── Apps API ─────────────────────────────────────────────────────────────────
 
 export const appsApi = {
@@ -357,8 +378,9 @@ export interface AuditLogPage {
 
 export const adminApi = {
   listUsers: () => api.get<User[]>("/admin/users"),
-  createUser: (payload: { email: string; username: string; password: string; role: string }) =>
+  createUser: (payload: { email: string; username: string; password?: string; role: string }) =>
     api.post<User>("/admin/users", payload),
+  resetPasskeys: (userId: string) => api.delete<void>(`/admin/users/${userId}/passkeys`),
   updateUser: (id: string, patch: { role?: string; is_active?: boolean }) =>
     api.patch<User>(`/admin/users/${id}`, patch),
   listAuditLogs: (page = 1, pageSize = 50) =>

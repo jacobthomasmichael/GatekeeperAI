@@ -15,6 +15,7 @@ import {
   Boxes,
   Sun,
   Moon,
+  Settings,
 } from "lucide-react";
 
 interface NavItem {
@@ -102,6 +103,18 @@ export default function Sidebar() {
             {user?.role}
           </span>
         </div>
+        <Link
+          href="/account"
+          className={clsx(
+            "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors mb-0.5",
+            pathname === "/account"
+              ? "bg-indigo-600 text-white"
+              : "text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-white"
+          )}
+        >
+          <Settings size={16} />
+          Account
+        </Link>
         <button
           onClick={handleLogout}
           className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-white transition-colors"
