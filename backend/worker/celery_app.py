@@ -1,6 +1,9 @@
 from celery import Celery
 from celery.schedules import crontab
 from app.config import settings
+from app.telemetry import setup_telemetry
+
+setup_telemetry()  # instruments Celery + Redis + SQLAlchemy; no FastAPI app here
 
 celery_app = Celery(
     "gatekeeperai",

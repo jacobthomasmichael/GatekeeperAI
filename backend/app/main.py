@@ -11,6 +11,7 @@ from app.config import settings
 from app.middleware.audit_middleware import AuditMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.routers import auth, apps, scans, approvals, deployments, secrets, setup, admin, passkeys
+from app.telemetry import setup_telemetry
 
 _logger = logging.getLogger("gatekeeper.startup")
 
@@ -24,6 +25,8 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+setup_telemetry(app)
 
 app.add_middleware(SecurityHeadersMiddleware)
 _cors_origins = [settings.APP_BASE_URL]
