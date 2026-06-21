@@ -93,6 +93,24 @@ def push_zip_to_repo(repo_path: str, zip_bytes: bytes) -> str:
                 raise ValueError("ZIP contains no files")
             zf.extractall(str(work))
 
+        # Flatten single-subdirectory zips (e.g. Mac "Compress folder" puts
+        # everything inside a folder/  and adds a __MACOSX/ metadata dir).
+        # If the only real content directory is one folder, hoist its contents.
+        children = [
+            p for p in work.iterdir()
+            if p.name != "__MACOSX" and not p.name.startswith(".")
+        ]
+        if len(children) == 1 and children[0].is_dir():
+            subdir = children[0]
+            for item in subdir.iterdir():
+                item.rename(work / item.name)
+            subdir.rmdir()
+        # Remove __MACOSX entirely if present
+        macosx = work / "__MACOSX"
+        if macosx.exists():
+            import shutil
+            shutil.rmtree(macosx)
+
         # Commit — if content is identical to the last upload, skip and return
         # the existing HEAD SHA rather than failing with "nothing to commit".
         subprocess.run(["git", "-C", str(work), "add", "-A"], check=True, capture_output=True)
