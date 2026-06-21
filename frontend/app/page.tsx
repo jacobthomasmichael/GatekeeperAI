@@ -20,10 +20,20 @@ export default function Root() {
         router.replace(json.complete ? "/login" : "/setup");
       })
       .catch(() => {
-        // If status check fails, fall back to login
         router.replace("/login");
       });
   }, [router]);
 
-  return null;
+  return (
+    <>
+      {/* Fallback for users with JavaScript disabled */}
+      <noscript>
+        <meta httpEquiv="refresh" content="0;url=/login" />
+      </noscript>
+      {/* Spinner shown while the redirect decision is in flight */}
+      <div className="flex h-screen items-center justify-center bg-white dark:bg-slate-950">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 dark:border-slate-700 border-t-indigo-500" />
+      </div>
+    </>
+  );
 }

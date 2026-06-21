@@ -5,7 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from app.config import settings
 from app.middleware.audit_middleware import AuditMiddleware
@@ -15,7 +14,20 @@ from app.telemetry import setup_telemetry
 
 _logger = logging.getLogger("gatekeeper.startup")
 
-limiter = Limiter(key_func=get_remote_address)
+
+def _get_client_ip(request: Request) -> str:
+    # nginx sets X-Real-IP to $remote_addr (the actual client IP).
+    # Fall back to X-Forwarded-For, then direct connection IP for dev.
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+limiter = Limiter(key_func=_get_client_ip)
 
 app = FastAPI(
     title="GatekeeperAI",

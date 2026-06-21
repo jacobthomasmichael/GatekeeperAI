@@ -1,0 +1,71 @@
+# GatekeeperAI nginx configuration template
+# GKControl replaces SERVER_NAME with the actual domain when provisioning.
+# This file documents the canonical config — the live file lives in
+# /opt/gatekeeperai/infra/nginx/conf.d/default.conf on the server.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name SERVER_NAME;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name SERVER_NAME;
+
+    ssl_certificate /etc/letsencrypt/live/SERVER_NAME/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/SERVER_NAME/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+    # Re-resolve Docker container IPs every 10s so nginx doesn't cache stale
+    # addresses after containers are recreated during image updates.
+    resolver 127.0.0.11 valid=10s;
+
+    # Frontend
+    location / {
+        proxy_pass http://frontend:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # API
+    location /api/ {
+        proxy_pass http://api:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 120s;
+    }
+
+    # Named location for app auth redirects (used by per-app location blocks)
+    location @app_login_redirect {
+        return 302 /login?next=$request_uri;
+    }
+
+    # Per-app proxy configs are written here by the deploy pipeline
+    include /etc/nginx/conf.d/apps/*.conf;
+}
