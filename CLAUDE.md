@@ -1,0 +1,315 @@
+# GatekeeperAI — Contributor Context
+
+This file gives AI assistants and human contributors a fast orientation to the codebase: where things live, how the pieces connect, and what to watch out for.
+
+---
+
+## What this repo is
+
+GatekeeperAI is an on-premises platform for governed deployment of AI apps. The full lifecycle:
+
+1. **Submit** — developer uploads a zip or pushes to the built-in git server
+2. **Scan** — five automated scanners run in parallel (secrets, CVEs, egress, PII, LLM review)
+3. **Review** — an approver reads the scan report and approves or rejects
+4. **Deploy** — approved app is built into a Docker container behind an nginx reverse proxy
+5. **Access** — users reach the app at a stable URL; GK handles auth, secrets injection, and per-app access control
+
+---
+
+## Repo layout
+
+```
+backend/            FastAPI API + Celery workers + scanners
+  app/
+    config.py       Pydantic settings (reads .env)
+    main.py         FastAPI app factory — middleware, routers, telemetry init
+    telemetry.py    OpenTelemetry setup (FastAPI + SQLAlchemy + Celery + Redis)
+    database.py     Async SQLAlchemy engine + session factory
+    deps.py         FastAPI dependency injectors (get_db, get_current_user, require_*)
+    models/         SQLAlchemy ORM models
+    schemas/        Pydantic request/response schemas
+    routers/        FastAPI route handlers (one file per domain)
+    scanners/       Security scanner implementations + Celery scan task
+    services/       Thin service layer called by routers and tasks
+    middleware/     AuditMiddleware, SecurityHeadersMiddleware
+  worker/
+    celery_app.py   Celery app definition + Beat schedule
+    deploy_task.py  Container build + start Celery task
+    sla_task.py     Celery Beat task — flags overdue approvals
+  alembic/          DB migrations
+  tests/            pytest suite (runs against a real test DB)
+
+frontend/           Next.js 16 App Router
+  app/
+    login/          Passkey-first login page
+    setup/          First-run wizard
+    dashboard/      IC view — submit apps, track status, manage secrets/access
+    approvals/      Approver queue + scan report viewer
+    deployments/    Admin deployment management
+    admin/          User management, audit log, platform metrics
+    account/        Passkey enrollment and management
+  components/       Shared components (Sidebar, AuthGuard, ScanResultCard, etc.)
+  lib/
+    api.ts          All API calls + typed interfaces
+    auth.ts         Auth context (user, login, loginWithTokens, logout)
+
+infra/
+  docker-compose.yml   Full stack: postgres, redis, api, worker, git-service, frontend, nginx
+  nginx/               nginx configs for the main proxy and per-app auth_request gating
+  git-service/         Alpine SSH container that receives git pushes
+  git-repos/           Bare git repos (created at runtime, not committed)
+  authorized_keys      SSH public keys for git push access
+
+GKAPP.md            AI assistant context file for users building GK-compatible apps
+INSTALL.md          End-user installation guide (non-technical audience)
+```
+
+---
+
+## Tech stack
+
+| Layer | Technology | Notes |
+|---|---|---|
+| Backend API | FastAPI 0.136 + SQLAlchemy 2.0 async | Python 3.11 |
+| Database | PostgreSQL 16 | Port 5433 locally (not 5432 — conflicts with local PG) |
+| Task queue | Celery 5.6 + Redis 7.2 | Broker and result backend both Redis |
+| Container runtime | Docker SDK (Python) | `container_service.py` wraps the SDK |
+| LLM | Anthropic Claude API | Used in `llm_scanner.py` for code review |
+| Frontend | Next.js 16 (App Router) + Tailwind CSS v3 | webpack, not Turbopack |
+| Auth | JWT (access + refresh) + WebAuthn passkeys | Refresh tokens are JTI-tracked in Redis |
+| Observability | OpenTelemetry 1.42 | OTLP HTTP export, no-op when endpoint not set |
+| CI | GitHub Actions | `.github/workflows/publish.yml` builds + pushes to GHCR on every push to main |
+
+---
+
+## Environment variables
+
+All config lives in `.env` (copy from `.env.example`). Key vars:
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `SECRET_KEY` | Yes | JWT signing (≥32 chars) |
+| `SECRET_ENCRYPTION_KEY` | Yes | AES-256 encryption for per-app secrets (≥32 chars) |
+| `ANTHROPIC_API_KEY` | Yes | Powers the LLM scanner |
+| `DATABASE_URL` | Set by compose | Overridden in Docker; only needed for local dev outside Docker |
+| `REDIS_URL` | Set by compose | Same as above |
+| `APP_BASE_URL` | Yes (prod) | Full public URL e.g. `https://gatekeeper.yourcompany.com` |
+| `NEXT_PUBLIC_API_URL` | Yes (prod) | Browser-facing API URL |
+| `HOOK_SECRET` | Yes (prod) | Authenticates the git post-receive hook to the API |
+| `ENVIRONMENT` | Yes | `development` or `production` — gates some security checks |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | OTLP HTTP endpoint; omit to discard traces |
+| `OTEL_SERVICE_NAME` | No | Defaults to `gatekeeperai` |
+| `SMTP_*` | No | Email notifications for approvers |
+| `LOG_FORWARD_*` | No | Audit log forwarding (Splunk, Loki, CloudWatch, syslog) |
+| `DOCKER_GID` | Linux only | GID of the docker group; needed so the worker can access the Docker socket |
+
+---
+
+## Database models
+
+```
+users               id, email, username, role (ic/approver/admin), hashed_password, is_active
+passkeys            id, user_id→users, credential_id, public_key, sign_count, label
+app_submissions     id, submitter_id→users, name, description, repo_url, status,
+                    risk_tier, detected_type, rejection, allowed_users[], visibility
+scans               id, submission_id→app_submissions, commit_sha, status, risk_score,
+                    risk_tier, findings (JSONB)
+approvals           id, scan_id→scans, approver_id→users, decision, comment, decided_at, sla_deadline
+deployments         id, submission_id→app_submissions, scan_id→scans, container_id,
+                    container_name, image_tag, status, internal_port, external_port,
+                    public_url, env_vars_injected, logs_cache
+secret_store        id, submission_id→app_submissions, key_name, encrypted_value
+audit_logs          id, actor_id, action, resource_type, resource_id, ip_address, created_at
+```
+
+All migrations live in `backend/alembic/versions/`. To generate a new one:
+```bash
+cd backend
+alembic revision --autogenerate -m "description"
+alembic upgrade head
+```
+
+---
+
+## Scan pipeline
+
+**Entry points:**
+- ZIP upload → `POST /apps/{id}/upload-zip` → `git_service.push_zip_to_repo()` → enqueues `run_scan_pipeline`
+- Git push → SSH → `infra/git-service` container → `git_hooks/post-receive` → HTTP call to `/scans/trigger` → enqueues `run_scan_pipeline`
+
+**Pipeline** (`backend/app/scanners/pipeline.py`):
+1. Checks out the commit into a temp directory
+2. Detects app type (`_detect_app_type`) — reads `requirements.txt` / `package.json` / `index.html`
+3. Runs five scanners in parallel, each publishing SSE events as they go:
+   - `secrets_scanner.py` — detect-secrets
+   - `dependency_scanner.py` — pip-audit / npm audit
+   - `egress_scanner.py` — static analysis for outbound URLs
+   - `pii_scanner.py` — regex patterns for PII
+   - `llm_scanner.py` — Claude code review via Anthropic API
+4. `risk_engine.py` aggregates findings → risk score (0–100) + tier (low/medium/high/critical)
+5. Writes scan record to DB; publishes final `complete` SSE event
+
+Scan events stream to the frontend via `GET /scans/{id}/events` (Server-Sent Events).
+
+---
+
+## Deploy pipeline
+
+**Entry point:** `POST /approvals/{id}/decide` with `decision=approved` → enqueues `deploy_approved_app`
+
+**Task** (`backend/worker/deploy_task.py`):
+1. Clones the approved commit into a build directory
+2. `dockerfile_service.py` generates a Dockerfile based on detected app type
+3. `container_service.build_image()` — `docker build`
+4. `secrets_service.py` decrypts per-app secrets → env vars dict
+5. `container_service.start_container()` — `docker run` with resource limits (512 MB RAM, 0.5 CPU)
+6. `nginx_service.py` writes an nginx config for the app's subdirectory and reloads nginx
+7. Health check polls the container; updates deployment status in DB
+
+**App URL pattern:** `https://your-domain.com/apps/{safe-name}/`
+
+**App type → Dockerfile mapping** (`dockerfile_service.py`):
+
+| Detected type | Entry point | Port |
+|---|---|---|
+| `python-streamlit` | `app.py` | 8501 |
+| `python-gradio` | `app.py` | 7860 |
+| `python-web` (Flask/FastAPI) | `app.py` | 8000 |
+| `python` (generic) | `main.py` | 8000 |
+| `nodejs` / `nodejs-next` | `index.js` | 3000 |
+| `static` | `index.html` | served by nginx directly |
+
+Detection reads `requirements.txt` for Python apps and `package.json` for Node. Zip uploads are automatically flattened if the user zipped a folder (strips single-subdirectory nesting and `__MACOSX/`).
+
+---
+
+## Auth model
+
+- **Login:** email + password OR passkey (WebAuthn). Passkey is the default UI flow.
+- **Tokens:** short-lived access JWT (15 min) + long-lived refresh JWT (7 days). Refresh tokens are tracked by JTI in Redis; logout invalidates the JTI.
+- **Passkeys:** stored in `passkeys` table. `@simplewebauthn/server` on the backend, `@simplewebauthn/browser` on the frontend (dynamic import).
+- **Per-request auth:** `deps.py` → `get_current_user` decodes the access JWT from the `Authorization: Bearer` header.
+- **nginx auth_request:** every request to a deployed app hits `GET /api/v1/auth/verify?app={safe_name}` before being proxied. The verify endpoint checks JWT + per-app `allowed_users` allowlist.
+
+---
+
+## Per-app access control
+
+Apps default to owner-only access. The `allowed_users` UUID array on `app_submissions` holds explicitly granted user IDs. Rules:
+
+| Actor | Access |
+|---|---|
+| Submitter (owner) | Always |
+| Users in `allowed_users` | Granted |
+| Approver / Admin | Always (operational bypass) |
+| All other ICs | Blocked (403 from nginx auth_request) |
+| Public apps | No auth at all |
+
+---
+
+## Frontend routing
+
+All pages are under `frontend/app/` using Next.js App Router.
+
+| Route | Who sees it | Purpose |
+|---|---|---|
+| `/login` | Everyone | Passkey or password login |
+| `/setup` | Admin (first run) | Setup wizard |
+| `/dashboard` | IC | Submit apps, track status, manage secrets/access |
+| `/dashboard/submit` | IC | Submit a new app |
+| `/dashboard/scans/[id]` | IC | Live scan report |
+| `/approvals` | Approver | Review queue |
+| `/deployments` | Admin | Manage running containers |
+| `/admin` | Admin | Users, audit log, metrics |
+| `/account` | Any logged-in user | Passkey enrollment |
+
+`AuthGuard` (`components/AuthGuard.tsx`) wraps protected routes and redirects to `/login?next=...` if no valid token. Role enforcement (redirecting an IC away from `/admin`) is also in AuthGuard.
+
+`lib/api.ts` is the single source of truth for all API calls and TypeScript types. Add new endpoints here first.
+
+---
+
+## Running locally (outside Docker)
+
+**Backend:**
+```bash
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+# Postgres must be running on port 5433; Redis on 6379
+alembic upgrade head
+uvicorn app.main:app --reload --port 8000
+celery -A worker.celery_app worker --loglevel=info   # separate terminal
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+npm run dev   # http://localhost:3000
+```
+
+**Full stack (recommended):**
+```bash
+cp .env.example .env   # fill in SECRET_KEY, SECRET_ENCRYPTION_KEY, ANTHROPIC_API_KEY
+docker compose -f infra/docker-compose.yml up --build
+```
+
+---
+
+## Tests
+
+```bash
+cd backend
+# Requires a running Postgres at localhost:5433 with a 'gatekeeperai_test' database
+pytest                        # all tests
+pytest tests/test_auth.py     # single file
+pytest -k "passkey"           # filter by name
+```
+
+Tests run against a **real test database** (`gatekeeperai_test`), not mocks. The conftest creates and drops tables on each run. Rate limiting is disabled in tests via `RATELIMIT_ENABLED=0`.
+
+Test files:
+
+| File | Covers |
+|---|---|
+| `test_auth.py` | Login, token refresh, logout, JWT validation |
+| `test_passkeys.py` | WebAuthn registration and authentication flows |
+| `test_apps.py` | App submission, zip upload, status transitions |
+| `test_approvals.py` | Approval, rejection, SLA deadline |
+| `test_rbac.py` | Role enforcement on every endpoint |
+| `test_secrets.py` | Secret create/read/delete, encryption |
+| `test_risk_engine.py` | Risk scoring logic |
+| `test_hardening.py` | Rate limiting, security headers, CSP |
+| `test_blue_green.py` | Deploy/stop/restart transitions |
+| `test_admin.py` | User management endpoints |
+| `test_setup.py` | First-run wizard flow |
+| `test_telemetry.py` | OpenTelemetry provider, span recording, FastAPI instrumentation |
+
+---
+
+## CI / CD
+
+`.github/workflows/publish.yml` — triggers on every push to `main`:
+1. Builds three Docker images: `gatekeeperai-backend`, `gatekeeperai-frontend`, `gatekeeperai-git-service`
+2. Pushes all three to GHCR (`ghcr.io/jacobthomasmichael/...`) with `latest` tag
+3. Multi-platform: `linux/amd64` + `linux/arm64`
+
+To deploy a new version on a running EC2 instance:
+```bash
+cd /opt/gatekeeperai
+sudo docker compose -f infra/docker-compose.yml pull
+sudo docker compose -f infra/docker-compose.yml up -d
+```
+
+---
+
+## Common gotchas
+
+- **Tailwind v4 / Turbopack are not used.** arm64 binary signing issues blocked both. Stick with Tailwind v3 and webpack.
+- **Postgres runs on 5433 locally**, not 5432, to avoid conflicts with a local Postgres installation.
+- **Docker socket access on Linux** — the worker container needs `DOCKER_GID` set to the host docker group GID so it can call the Docker API.
+- **npm lockfile format** — the Docker build uses `node:20-alpine` (npm v10). If you regenerate `package-lock.json` locally with npm v11, the build will fail. Regenerate inside the container: `docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine npm install`
+- **OTel provider is set once at import time** — `main.py` calls `setup_telemetry(app)` at module level. Tests that need span recording should use `provider.get_tracer()` directly rather than the global `trace.get_tracer()`.
+- **Mac zip uploads** — GK automatically flattens single-subdirectory zips and strips `__MACOSX/`. Users can zip either a folder or its contents.
+- **Streamlit API versions** — `st.context.headers` and `use_container_width` require `streamlit>=1.37`. Recommend `streamlit==1.40.0` in `GKAPP.md` examples.
