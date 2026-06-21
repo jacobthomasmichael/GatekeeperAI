@@ -212,6 +212,20 @@ if __name__ == "__main__":
 
 ---
 
+## Streamlit API Version Notes
+
+Pin to **`streamlit==1.40.0`** (or higher). Some APIs were added in later versions:
+
+| API | Minimum version | Notes |
+|-----|----------------|-------|
+| `st.context.headers` | 1.37 | Use to read `X-GK-User-*` headers |
+| `st.image(..., use_container_width=True)` | 1.37 | Use `use_column_width=True` on older versions |
+| `st.connection()` | 1.28 | Built-in database/API connectors |
+
+If your app fails to start after deployment, GatekeeperAI will show you the container error log directly on your dashboard. The most common cause is a version mismatch between your pinned dependency and an API your code calls.
+
+---
+
 ## Tips for a Clean First Scan
 
 - **No secrets in code.** Use `os.environ` and configure values in GK Secrets Manager.

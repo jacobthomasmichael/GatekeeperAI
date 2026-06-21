@@ -88,6 +88,21 @@ def get_container_status(container_id: str) -> str:
         return "removed"
 
 
+def get_container_health(container_id: str, log_tail: int = 30) -> dict:
+    """Return live status, restart count, and recent logs (when crashing)."""
+    client = _client()
+    try:
+        container = client.containers.get(container_id)
+        status = container.status
+        restart_count = container.attrs.get("RestartCount", 0)
+        logs = None
+        if status in ("restarting", "exited", "dead"):
+            logs = container.logs(tail=log_tail, timestamps=False).decode(errors="replace")
+        return {"status": status, "restart_count": restart_count, "logs": logs}
+    except NotFound:
+        return {"status": "removed", "restart_count": 0, "logs": None}
+
+
 def get_container_logs(container_id: str, tail: int = 200) -> str:
     client = _client()
     try:

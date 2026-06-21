@@ -338,6 +338,10 @@ export const deploymentsApi = {
     api.post<Deployment>(`/deployments/${deploymentId}/stop`),
   start: (deploymentId: string) =>
     api.post<Deployment>(`/deployments/${deploymentId}/start`),
+  health: (submissionId: string) =>
+    api.get<{ status: string; restart_count: number; logs: string | null }>(
+      `/deployments/app/${submissionId}/health`
+    ),
 };
 
 // ── Secrets API ───────────────────────────────────────────────────────────────

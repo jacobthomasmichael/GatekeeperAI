@@ -137,6 +137,32 @@ async def restart_deployment(
     return deployment
 
 
+@router.get("/app/{submission_id}/health")
+async def get_app_health(
+    submission_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Live container health — accessible to the app owner."""
+    if current_user.role == "ic":
+        app = await db.get(AppSubmission, submission_id)
+        if not app:
+            raise HTTPException(status_code=404, detail="App not found")
+        if app.submitter_id != current_user.id and not (
+            app.allowed_users and current_user.id in app.allowed_users
+        ):
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    result = await db.execute(
+        select(Deployment).where(Deployment.submission_id == submission_id)
+    )
+    deployment = result.scalar_one_or_none()
+    if not deployment or not deployment.container_id:
+        return {"status": "no_container", "restart_count": 0, "logs": None}
+
+    return container_service.get_container_health(deployment.container_id)
+
+
 @router.get("/{deployment_id}/logs")
 async def get_logs(
     deployment_id: uuid.UUID,

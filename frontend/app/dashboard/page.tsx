@@ -10,11 +10,14 @@ import RiskBadge from "@/components/RiskBadge";
 import StatusBadge from "@/components/StatusBadge";
 import { PlusCircle, GitBranch, ExternalLink, RefreshCw } from "lucide-react";
 
+type ContainerHealth = { status: string; restart_count: number; logs: string | null };
+
 export default function DashboardPage() {
   const [apps, setApps] = useState<AppSubmission[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [latestScans, setLatestScans] = useState<Record<string, Scan>>({});
   const [deployments, setDeployments] = useState<Record<string, Deployment>>({});
+  const [containerHealth, setContainerHealth] = useState<Record<string, ContainerHealth>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,6 +27,7 @@ export default function DashboardPage() {
       setLoading(false);
       const scansMap: Record<string, Scan> = {};
       const deploymentsMap: Record<string, Deployment> = {};
+      const healthMap: Record<string, ContainerHealth> = {};
       await Promise.all(
         list.map(async (app) => {
           try {
@@ -34,11 +38,15 @@ export default function DashboardPage() {
             try {
               deploymentsMap[app.id] = await deploymentsApi.getForApp(app.id);
             } catch {}
+            try {
+              healthMap[app.id] = await deploymentsApi.health(app.id);
+            } catch {}
           }
         })
       );
       setLatestScans(scansMap);
       setDeployments(deploymentsMap);
+      setContainerHealth(healthMap);
     });
   }, []);
 
@@ -92,6 +100,8 @@ export default function DashboardPage() {
         {apps.map((app) => {
           const scan = latestScans[app.id];
           const deployment = deployments[app.id];
+          const health = containerHealth[app.id];
+          const isCrashing = health && ["restarting", "exited", "dead"].includes(health.status);
           return (
             <div
               key={app.id}
@@ -161,6 +171,11 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </div>
+              )}
+
+              {/* Container crash banner */}
+              {isCrashing && (
+                <ContainerErrorPanel health={health} appId={app.id} />
               )}
 
               {/* Clone URL */}
@@ -309,6 +324,61 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ContainerErrorPanel({ health, appId }: { health: ContainerHealth; appId: string }) {
+  const [showLogs, setShowLogs] = useState(false);
+
+  const statusLabel = health.status === "restarting"
+    ? "crash-looping (restarting repeatedly)"
+    : health.status === "exited"
+    ? "exited unexpectedly"
+    : health.status;
+
+  return (
+    <div className="mt-4 rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 p-4">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 h-2 w-2 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+            Container is {statusLabel}
+            {health.restart_count > 0 && (
+              <span className="ml-2 text-xs font-normal text-amber-500 dark:text-amber-600">
+                {health.restart_count} restart{health.restart_count !== 1 ? "s" : ""}
+              </span>
+            )}
+          </p>
+          <p className="mt-1 text-xs text-amber-600/80 dark:text-amber-300/70 leading-relaxed">
+            Your app is deployed but failing to start. Common causes:
+          </p>
+          <ul className="mt-1.5 text-xs text-amber-600/80 dark:text-amber-300/70 space-y-0.5 list-disc list-inside">
+            <li>A dependency version mismatch — check that APIs you use exist in your pinned version</li>
+            <li>A missing import or syntax error in <code className="font-mono">app.py</code></li>
+            <li>An environment variable your app expects that hasn&apos;t been added to Secrets</li>
+            <li>Using <code className="font-mono">st.context</code> requires <code className="font-mono">streamlit&gt;=1.37</code> — pin to <code className="font-mono">streamlit==1.40.0</code></li>
+          </ul>
+          {health.logs && (
+            <div className="mt-3">
+              <button
+                onClick={() => setShowLogs(v => !v)}
+                className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-medium"
+              >
+                {showLogs ? "Hide logs ↑" : "View error logs ↓"}
+              </button>
+              {showLogs && (
+                <pre className="mt-2 rounded bg-slate-950 p-3 text-xs text-slate-300 overflow-x-auto whitespace-pre-wrap leading-5 max-h-48 overflow-y-auto">
+                  {health.logs.trim()}
+                </pre>
+              )}
+            </div>
+          )}
+          <p className="mt-3 text-xs text-amber-600/70 dark:text-amber-400/60">
+            Fix the issue and use <strong>Update App</strong> to upload a corrected zip.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
