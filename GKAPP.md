@@ -80,11 +80,9 @@ user_role  = request.headers.get("X-GK-User-Role")    # "ic", "approver", or "ad
 **Streamlit example:**
 ```python
 import streamlit as st
-from flask import request  # or however your framework exposes headers
 
-# In a GK-deployed Streamlit app, use st.context or query params
-# GK injects user info — no st.login() needed
-st.write(f"Welcome, {st.context.headers.get('X-GK-User-Email')}")
+# st.context.headers available in Streamlit >= 1.37
+st.write(f"Welcome, {st.context.headers.get('X-GK-User-Email', 'teammate')}")
 ```
 
 ---
@@ -148,7 +146,7 @@ The GatekeeperAI security scanner checks dependencies. To avoid unnecessary scan
 
 ```
 # Good — pinned versions
-streamlit==1.35.0
+streamlit==1.40.0
 openai==1.30.0
 pandas==2.2.2
 
@@ -186,7 +184,7 @@ if st.button("Submit") and user_input:
 
 ```
 # requirements.txt
-streamlit==1.35.0
+streamlit==1.40.0
 ```
 
 ### Flask API app
