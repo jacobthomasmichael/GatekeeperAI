@@ -9,7 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from app.config import settings
 from app.middleware.audit_middleware import AuditMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import auth, apps, scans, approvals, deployments, secrets, setup, admin, passkeys
+from app.routers import auth, apps, scans, approvals, deployments, secrets, setup, admin, passkeys, sso
 from app.telemetry import setup_telemetry
 
 _logger = logging.getLogger("gatekeeper.startup")
@@ -83,6 +83,8 @@ app.include_router(secrets.router, prefix=API_PREFIX)
 app.include_router(setup.router, prefix=API_PREFIX)
 app.include_router(admin.router, prefix=API_PREFIX)
 app.include_router(passkeys.router, prefix=API_PREFIX)
+app.include_router(sso.auth_router, prefix=API_PREFIX)
+app.include_router(sso.admin_router, prefix=API_PREFIX)
 
 
 @app.get("/health")

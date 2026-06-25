@@ -3,8 +3,10 @@
 import { Suspense, useState, FormEvent, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import { ApiError, passkeyApi } from "@/lib/api";
+import { ApiError, passkeyApi, ssoApi, SSOPublicConfig } from "@/lib/api";
 import { Shield, Fingerprint, KeyRound, Loader2 } from "lucide-react";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL!;
 
 function LoginForm() {
   const { user, login, loginWithTokens } = useAuth();
@@ -15,12 +17,44 @@ function LoginForm() {
   const [usePassword, setUsePassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [ssoConfig, setSsoConfig] = useState<SSOPublicConfig | null>(null);
+  const [ssoLoading, setSsoLoading] = useState(false);
 
   const next = searchParams.get("next") || "/dashboard";
+  const ssoCode = searchParams.get("sso_code");
+  const ssoError = searchParams.get("error");
 
   useEffect(() => {
     if (user) router.replace(next);
   }, [user, router, next]);
+
+  useEffect(() => {
+    ssoApi.getPublicConfig().then(setSsoConfig).catch(() => null);
+  }, []);
+
+  useEffect(() => {
+    if (!ssoCode) return;
+    setSsoLoading(true);
+    ssoApi.exchange(ssoCode)
+      .then(async (tokens) => {
+        await loginWithTokens(tokens.access_token, tokens.refresh_token);
+        router.replace(next);
+      })
+      .catch(() => {
+        setError("SSO sign-in expired or failed. Please try again.");
+        setSsoLoading(false);
+      });
+  }, [ssoCode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (ssoError) {
+      setError(
+        ssoError === "sso_not_configured"
+          ? "SSO is not configured."
+          : "SSO sign-in failed. Please try again or use a local account."
+      );
+    }
+  }, [ssoError]);
 
   async function handlePasskey(e: FormEvent) {
     e.preventDefault();
@@ -77,8 +111,32 @@ function LoginForm() {
           </div>
         </div>
 
+        {ssoLoading && (
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-slate-400 mb-4">
+            <Loader2 size={16} className="animate-spin" />
+            Completing SSO sign-in…
+          </div>
+        )}
+
         <div className="rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
           <h2 className="text-base font-medium text-gray-900 dark:text-white">Sign in</h2>
+
+          {ssoConfig?.enabled && !ssoLoading && (
+            <>
+              <a
+                href={`${API_BASE}/auth/sso/authorize?next=${encodeURIComponent(next)}`}
+                className="w-full flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-gray-800 dark:text-white transition-colors hover:bg-gray-50 dark:hover:bg-slate-700"
+              >
+                <Shield size={16} className="text-indigo-500" />
+                Sign in with {ssoConfig.provider_name || "SSO"}
+              </a>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 border-t border-gray-200 dark:border-slate-700" />
+                <span className="text-xs text-gray-400 dark:text-slate-500">or</span>
+                <div className="flex-1 border-t border-gray-200 dark:border-slate-700" />
+              </div>
+            </>
+          )}
 
           {error && (
             <div className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700/40 px-3 py-2 text-sm text-red-600 dark:text-red-400">

@@ -18,6 +18,7 @@ from app.schemas.app_submission import (
     AppCreate, AppResponse, AppUserGrant, AppUserResponse,
     RejectionFeedback, VisibilityUpdate,
 )
+from app.schemas.sso import AppGroupGrant
 from app.services.git_service import create_bare_repo, delete_bare_repo, push_zip_to_repo
 
 router = APIRouter(prefix="/apps", tags=["apps"])
@@ -52,6 +53,8 @@ async def _with_rejection(app: AppSubmission, db: AsyncSession) -> dict:
     # Normalise None → [] so the schema validator is happy
     if data.get("allowed_users") is None:
         data["allowed_users"] = []
+    if data.get("allowed_groups") is None:
+        data["allowed_groups"] = []
 
     if app.status in ("rejected", "deployed"):
         scan_result = await db.execute(
@@ -120,13 +123,17 @@ async def list_apps(
     if current_user.role in ("admin", "approver"):
         result = await db.execute(select(AppSubmission).order_by(AppSubmission.created_at.desc()))
     else:
-        # ICs see their own apps AND apps they've been granted access to
+        # ICs see their own apps AND apps they've been granted access to (user or group)
+        conditions = [
+            AppSubmission.submitter_id == current_user.id,
+            AppSubmission.allowed_users.contains([current_user.id]),
+        ]
+        if current_user.sso_groups:
+            conditions.append(AppSubmission.allowed_groups.overlap(current_user.sso_groups))
+        from sqlalchemy import or_
         result = await db.execute(
             select(AppSubmission)
-            .where(
-                (AppSubmission.submitter_id == current_user.id)
-                | AppSubmission.allowed_users.contains([current_user.id])
-            )
+            .where(or_(*conditions))
             .order_by(AppSubmission.created_at.desc())
         )
     apps = list(result.scalars().all())
@@ -338,6 +345,70 @@ async def remove_app_user(
         raise HTTPException(status_code=404, detail="User does not have access to this app")
 
     app.allowed_users = [u for u in existing if u != user_id]
+    await db.commit()
+
+
+@router.get("/{app_id}/groups")
+async def list_app_groups(
+    app_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[str]:
+    result = await db.execute(select(AppSubmission).where(AppSubmission.id == app_id))
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+    if not _can_access(app, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return list(app.allowed_groups or [])
+
+
+@router.post("/{app_id}/groups", status_code=status.HTTP_201_CREATED)
+async def add_app_group(
+    app_id: uuid.UUID,
+    payload: AppGroupGrant,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await db.execute(select(AppSubmission).where(AppSubmission.id == app_id))
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+    if not _can_manage(app, current_user):
+        raise HTTPException(status_code=403, detail="Only the app owner or an admin can manage access")
+
+    group = payload.group_name.strip()
+    if not group:
+        raise HTTPException(status_code=400, detail="group_name cannot be empty")
+
+    existing = list(app.allowed_groups or [])
+    if group in existing:
+        raise HTTPException(status_code=409, detail="That group already has access")
+
+    app.allowed_groups = existing + [group]
+    await db.commit()
+    return {"group_name": group}
+
+
+@router.delete("/{app_id}/groups/{group_name:path}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_app_group(
+    app_id: uuid.UUID,
+    group_name: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    result = await db.execute(select(AppSubmission).where(AppSubmission.id == app_id))
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="App not found")
+    if not _can_manage(app, current_user):
+        raise HTTPException(status_code=403, detail="Only the app owner or an admin can manage access")
+
+    existing = list(app.allowed_groups or [])
+    if group_name not in existing:
+        raise HTTPException(status_code=404, detail="Group does not have access to this app")
+
+    app.allowed_groups = [g for g in existing if g != group_name]
     await db.commit()
 
 

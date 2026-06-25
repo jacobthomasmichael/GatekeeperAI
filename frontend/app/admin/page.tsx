@@ -6,6 +6,7 @@ import {
   deploymentsApi,
   appsApi,
   adminApi,
+  ssoApi,
   ApiError,
   type ApprovalStats,
   type Deployment,
@@ -13,6 +14,8 @@ import {
   type User,
   type AuditLogEntry,
   type AuditLogPage,
+  type SSOConfig,
+  type SSOConfigCreate,
 } from "@/lib/api";
 import {
   CheckCircle,
@@ -26,11 +29,15 @@ import {
   UserPlus,
   ChevronLeft,
   ChevronRight,
+  KeyRound,
+  Trash2,
+  Plus,
+  CheckCircle2,
 } from "lucide-react";
 import StatusBadge from "@/components/StatusBadge";
 import RiskBadge from "@/components/RiskBadge";
 
-type Tab = "dashboard" | "users" | "audit";
+type Tab = "dashboard" | "users" | "audit" | "sso";
 
 // ── Shared ────────────────────────────────────────────────────────────────────
 
@@ -518,12 +525,350 @@ function AuditTab() {
   );
 }
 
+// ── SSO Tab ───────────────────────────────────────────────────────────────────
+
+const ROLES = ["ic", "approver", "admin"] as const;
+const ROLE_DISPLAY: Record<string, string> = { ic: "IC", approver: "Approver", admin: "Admin" };
+
+function SSOTab() {
+  const [config, setConfig] = useState<SSOConfig | null | undefined>(undefined);
+  const [form, setForm] = useState<SSOConfigCreate>({
+    provider_name: "",
+    discovery_url: "",
+    client_id: "",
+    client_secret: "",
+    group_claim_key: "groups",
+    default_role: "ic",
+    role_mappings: {},
+    is_enabled: true,
+  });
+  const [newGroup, setNewGroup] = useState("");
+  const [newGroupRole, setNewGroupRole] = useState<string>("ic");
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; issuer?: string; error?: string } | null>(null);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    ssoApi.getConfig()
+      .then((c) => {
+        setConfig(c);
+        setForm({
+          provider_name: c.provider_name,
+          discovery_url: c.discovery_url,
+          client_id: c.client_id,
+          client_secret: "",
+          group_claim_key: c.group_claim_key,
+          default_role: c.default_role,
+          role_mappings: c.role_mappings ?? {},
+          is_enabled: c.is_enabled,
+        });
+      })
+      .catch(() => setConfig(null));
+  }, []);
+
+  if (config === undefined) {
+    return (
+      <div className="flex h-48 items-center justify-center">
+        <div className="h-7 w-7 animate-spin rounded-full border-4 border-gray-200 dark:border-slate-700 border-t-indigo-500" />
+      </div>
+    );
+  }
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r = await ssoApi.testConfig({
+        discovery_url: form.discovery_url,
+        client_id: form.client_id,
+        client_secret: form.client_secret,
+      });
+      setTestResult(r);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    setSaving(true);
+    try {
+      if (config) {
+        const updated = await ssoApi.updateConfig(form);
+        setConfig(updated);
+      } else {
+        const created = await ssoApi.createConfig(form);
+        setConfig(created);
+        setForm((f) => ({ ...f, client_secret: "" }));
+      }
+      setSuccess("SSO configuration saved.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Delete SSO configuration? All SSO-only users will be unable to log in.")) return;
+    setDeleting(true);
+    try {
+      await ssoApi.deleteConfig();
+      setConfig(null);
+      setForm({ provider_name: "", discovery_url: "", client_id: "", client_secret: "", group_claim_key: "groups", default_role: "ic", role_mappings: {}, is_enabled: true });
+      setSuccess("SSO configuration deleted.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const addMapping = () => {
+    if (!newGroup.trim()) return;
+    setForm((f) => ({ ...f, role_mappings: { ...f.role_mappings, [newGroup.trim()]: newGroupRole } }));
+    setNewGroup("");
+    setNewGroupRole("ic");
+  };
+
+  const removeMapping = (group: string) => {
+    setForm((f) => {
+      const { [group]: _, ...rest } = f.role_mappings;
+      return { ...f, role_mappings: rest };
+    });
+  };
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <div>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-white">SSO / OIDC</h2>
+        <p className="mt-1 text-sm text-gray-400 dark:text-slate-500">
+          Connect an identity provider so users can sign in with SSO. Supports any OIDC-compliant provider (Okta, Azure AD, Google Workspace, Keycloak).
+        </p>
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 dark:border-red-700/40 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 dark:border-emerald-700/40 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-400">
+          <CheckCircle2 size={15} />
+          {success}
+        </div>
+      )}
+
+      <form onSubmit={handleSave} className="space-y-5">
+        <div className="rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
+          <h3 className="text-sm font-medium text-gray-700 dark:text-slate-300">Provider</h3>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Provider Name</label>
+              <input
+                className={inputCls}
+                placeholder="Okta"
+                value={form.provider_name}
+                onChange={(e) => setForm((f) => ({ ...f, provider_name: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Group Claim Key</label>
+              <input
+                className={inputCls}
+                placeholder="groups"
+                value={form.group_claim_key}
+                onChange={(e) => setForm((f) => ({ ...f, group_claim_key: e.target.value }))}
+              />
+              <p className="text-[11px] text-gray-400 dark:text-slate-500">
+                Azure AD emits group Object IDs (GUIDs) by default, not display names.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Discovery URL</label>
+            <input
+              className={inputCls}
+              placeholder="https://your-idp.example.com/.well-known/openid-configuration"
+              value={form.discovery_url}
+              onChange={(e) => setForm((f) => ({ ...f, discovery_url: e.target.value }))}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Client ID</label>
+              <input
+                className={inputCls}
+                placeholder="0oa..."
+                value={form.client_id}
+                onChange={(e) => setForm((f) => ({ ...f, client_id: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-slate-400">
+                Client Secret {config && <span className="text-gray-400 dark:text-slate-500 font-normal">(leave blank to keep existing)</span>}
+              </label>
+              <input
+                type="password"
+                className={inputCls}
+                placeholder={config ? "••••••••" : "Client secret"}
+                value={form.client_secret}
+                onChange={(e) => setForm((f) => ({ ...f, client_secret: e.target.value }))}
+                required={!config}
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={handleTest}
+              disabled={testing || !form.discovery_url}
+              className="rounded-lg border border-gray-200 dark:border-slate-700 px-3 py-1.5 text-xs text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50"
+            >
+              {testing ? "Testing…" : "Test connection"}
+            </button>
+            {testResult && (
+              testResult.ok ? (
+                <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 size={13} /> Connected — issuer: {testResult.issuer}
+                </span>
+              ) : (
+                <span className="text-xs text-red-500">{testResult.error}</span>
+              )
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
+          <h3 className="text-sm font-medium text-gray-700 dark:text-slate-300">Role Assignment</h3>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Default Role</label>
+            <select
+              className={inputCls}
+              value={form.default_role}
+              onChange={(e) => setForm((f) => ({ ...f, default_role: e.target.value }))}
+            >
+              {ROLES.map((r) => (
+                <option key={r} value={r}>{ROLE_DISPLAY[r]}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-gray-400 dark:text-slate-500">
+              Role assigned when no group mapping matches. Google Workspace does not provide a standard groups claim, so all GWS users receive the default role.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Group → Role Mappings</label>
+            {Object.entries(form.role_mappings).length === 0 ? (
+              <p className="text-xs text-gray-400 dark:text-slate-500">No mappings — all SSO users get the default role.</p>
+            ) : (
+              <div className="divide-y divide-gray-100 dark:divide-slate-800 rounded-lg border border-gray-200 dark:border-slate-800 overflow-hidden">
+                {Object.entries(form.role_mappings).map(([group, role]) => (
+                  <div key={group} className="flex items-center justify-between px-3 py-2 bg-white dark:bg-slate-900">
+                    <span className="text-xs text-gray-700 dark:text-slate-300 font-mono">{group}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400">→ {ROLE_DISPLAY[role] ?? role}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeMapping(group)}
+                        className="rounded p-1 text-gray-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2 items-center">
+              <input
+                type="text"
+                placeholder="Group name or ID"
+                value={newGroup}
+                onChange={(e) => setNewGroup(e.target.value)}
+                className="rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 flex-1"
+              />
+              <select
+                value={newGroupRole}
+                onChange={(e) => setNewGroupRole(e.target.value)}
+                className="rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                {ROLES.map((r) => <option key={r} value={r}>{ROLE_DISPLAY[r]}</option>)}
+              </select>
+              <button
+                type="button"
+                onClick={addMapping}
+                disabled={!newGroup.trim()}
+                className="flex items-center gap-1 rounded-lg border border-gray-200 dark:border-slate-700 px-2.5 py-1.5 text-xs text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-40"
+              >
+                <Plus size={12} />
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.is_enabled}
+              onChange={(e) => setForm((f) => ({ ...f, is_enabled: e.target.checked }))}
+              className="h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-slate-300">Enable SSO</p>
+              <p className="text-xs text-gray-400 dark:text-slate-500">
+                Uncheck to hide the SSO button without deleting the configuration.
+              </p>
+            </div>
+          </label>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex gap-2">
+            <button type="submit" disabled={saving} className={primaryBtn}>
+              {saving ? "Saving…" : config ? "Save changes" : "Enable SSO"}
+            </button>
+          </div>
+          {config && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="rounded-lg border border-red-200 dark:border-red-800 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+            >
+              {deleting ? "Deleting…" : "Delete SSO"}
+            </button>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ── Page root ─────────────────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard",  icon: <Layers size={15} /> },
   { id: "users",     label: "Users",      icon: <Users size={15} /> },
   { id: "audit",     label: "Audit Log",  icon: <ShieldCheck size={15} /> },
+  { id: "sso",       label: "SSO",        icon: <KeyRound size={15} /> },
 ];
 
 export default function AdminPage() {
@@ -556,6 +901,7 @@ export default function AdminPage() {
       {tab === "dashboard" && <DashboardTab />}
       {tab === "users"     && <UsersTab />}
       {tab === "audit"     && <AuditTab />}
+      {tab === "sso"       && <SSOTab />}
     </div>
   );
 }

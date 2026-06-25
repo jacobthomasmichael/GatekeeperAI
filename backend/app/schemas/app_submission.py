@@ -75,4 +75,5 @@ class AppResponse(BaseModel):
     visibility: str = "private"
     public_flagged_at: Optional[datetime] = None
     allowed_users: list[uuid.UUID] = []
+    allowed_groups: list[str] = []
     rejection: Optional[RejectionFeedback] = None

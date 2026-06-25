@@ -68,6 +68,23 @@ def consume_refresh_jti(jti: str) -> str | None:
         return None
 
 
+_ROLE_PRIORITY: dict[str, int] = {"admin": 3, "approver": 2, "ic": 1}
+
+
+def map_groups_to_role(
+    groups: list[str],
+    mappings: dict[str, str],
+    default: str = "ic",
+) -> str:
+    """Return the highest-priority role found across the user's SSO groups."""
+    best = default
+    for group in groups:
+        mapped = mappings.get(group)
+        if mapped and _ROLE_PRIORITY.get(mapped, 0) > _ROLE_PRIORITY.get(best, 0):
+            best = mapped
+    return best
+
+
 def revoke_refresh_jti(jti: str) -> None:
     try:
         r = _redis()

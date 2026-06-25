@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { appsApi, authApi, deploymentsApi, scansApi, type AppSubmission, type Deployment, type Scan, type User } from "@/lib/api";
 import AppAccessManager from "@/components/AppAccessManager";
+import AppGroupsManager from "@/components/AppGroupsManager";
 import SecretsManager from "@/components/SecretsManager";
+import { ssoApi, type SSOPublicConfig } from "@/lib/api";
 import RiskBadge from "@/components/RiskBadge";
 import StatusBadge from "@/components/StatusBadge";
 import { PlusCircle, GitBranch, ExternalLink, RefreshCw } from "lucide-react";
@@ -19,6 +21,11 @@ export default function DashboardPage() {
   const [deployments, setDeployments] = useState<Record<string, Deployment>>({});
   const [containerHealth, setContainerHealth] = useState<Record<string, ContainerHealth>>({});
   const [loading, setLoading] = useState(true);
+  const [ssoConfig, setSsoConfig] = useState<SSOPublicConfig | null>(null);
+
+  useEffect(() => {
+    ssoApi.getPublicConfig().then(setSsoConfig).catch(() => null);
+  }, []);
 
   useEffect(() => {
     Promise.all([appsApi.list(), authApi.me()]).then(async ([list, me]) => {
@@ -188,6 +195,11 @@ export default function DashboardPage() {
               <AppAccessManager
                 appId={app.id}
                 isOwner={currentUser?.id === app.submitter_id}
+              />
+              <AppGroupsManager
+                appId={app.id}
+                isOwner={currentUser?.id === app.submitter_id}
+                ssoEnabled={ssoConfig?.enabled ?? false}
               />
             </div>
           );

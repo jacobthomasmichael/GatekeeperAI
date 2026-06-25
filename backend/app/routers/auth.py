@@ -153,5 +153,10 @@ async def verify_session(
         return {"ok": True}
     if submission.allowed_users and user_id in submission.allowed_users:
         return {"ok": True}
+    if submission.allowed_groups:
+        user_row = await db.get(User, user_id)
+        if user_row and user_row.sso_groups:
+            if set(user_row.sso_groups) & set(submission.allowed_groups):
+                return {"ok": True}
 
     raise HTTPException(status_code=403, detail="Access denied")

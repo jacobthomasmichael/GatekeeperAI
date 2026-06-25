@@ -39,6 +39,8 @@ class UserResponse(BaseModel):
     username: str
     role: str
     is_active: bool
+    sso_subject: str | None = None
+    sso_groups: list[str] = []
     created_at: datetime
 
 

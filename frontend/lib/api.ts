@@ -109,6 +109,7 @@ export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
+  put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
   delete: <T>(path: string) => request<T>("DELETE", path),
 };
 
@@ -148,7 +149,37 @@ export interface AppSubmission {
   commit_sha: string | null;
   created_at: string;
   allowed_users: string[];
+  allowed_groups: string[];
   rejection: RejectionFeedback | null;
+}
+
+export interface SSOPublicConfig {
+  enabled: boolean;
+  provider_name: string | null;
+}
+
+export interface SSOConfig {
+  id: string;
+  provider_name: string;
+  discovery_url: string;
+  client_id: string;
+  group_claim_key: string;
+  default_role: string;
+  role_mappings: Record<string, string> | null;
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SSOConfigCreate {
+  provider_name: string;
+  discovery_url: string;
+  client_id: string;
+  client_secret: string;
+  group_claim_key: string;
+  default_role: string;
+  role_mappings: Record<string, string>;
+  is_enabled: boolean;
 }
 
 export interface AppUser {
@@ -300,6 +331,11 @@ export const appsApi = {
   listUsers: (id: string) => api.get<AppUser[]>(`/apps/${id}/users`),
   addUser: (id: string, email: string) => api.post<AppUser>(`/apps/${id}/users`, { email }),
   removeUser: (id: string, userId: string) => api.delete(`/apps/${id}/users/${userId}`),
+  listGroups: (id: string) => api.get<string[]>(`/apps/${id}/groups`),
+  addGroup: (id: string, group_name: string) =>
+    api.post<{ group_name: string }>(`/apps/${id}/groups`, { group_name }),
+  removeGroup: (id: string, groupName: string) =>
+    api.delete(`/apps/${id}/groups/${encodeURIComponent(groupName)}`),
 };
 
 // ── Scans API ─────────────────────────────────────────────────────────────────
@@ -379,6 +415,23 @@ export interface AuditLogPage {
   page_size: number;
   items: AuditLogEntry[];
 }
+
+// ── SSO API ───────────────────────────────────────────────────────────────────
+
+export const ssoApi = {
+  getPublicConfig: () => api.get<SSOPublicConfig>("/auth/sso/config"),
+  getConfig: () => api.get<SSOConfig>("/admin/sso"),
+  createConfig: (payload: SSOConfigCreate) => api.post<SSOConfig>("/admin/sso", payload),
+  updateConfig: (payload: SSOConfigCreate) => api.put<SSOConfig>("/admin/sso", payload),
+  deleteConfig: () => api.delete<void>("/admin/sso"),
+  testConfig: (payload: { discovery_url: string; client_id: string; client_secret: string }) =>
+    api.post<{ ok: boolean; issuer?: string; error?: string }>("/admin/sso/test", payload),
+  exchange: (code: string) =>
+    api.post<{ access_token: string; refresh_token: string; token_type: string }>(
+      "/auth/sso/exchange",
+      { code }
+    ),
+};
 
 export const adminApi = {
   listUsers: () => api.get<User[]>("/admin/users"),
