@@ -24,6 +24,15 @@ Every request to a deployed app passes through nginx before it reaches the conta
 **Passkeys as the default sign-in method**
 Passkeys are phishing-proof by construction (the credential is bound to the origin), and Touch ID / Face ID are faster than any password flow. The WebAuthn spec is mature enough that `@simplewebauthn/server` and `@simplewebauthn/browser` cover the complexity. Password auth stays available as a fallback for devices that don't support platform authenticators. I'd rather default to the secure path and fall back than default to passwords and offer passkeys as an opt-in that nobody enables.
 
+**SSO / OIDC as the enterprise on-ramp**
+Passkeys are the right default for individuals, but enterprise procurement requires SSO — "we already manage identities in Okta, we're not maintaining a second directory." The implementation uses `authlib` for the OIDC Authorization Code Flow with PKCE. Discovery document caching in Redis (1-hour TTL, invalidated on config update) avoids a round-trip on every login without letting stale metadata sit forever.
+
+The callback-to-frontend token handoff is the least obvious part: the OIDC callback is a browser redirect (GET), so you can't return JSON tokens directly. The solution is a short-lived exchange code stored in Redis (UUID key, 120-second TTL, consumed via GETDEL). The IdP redirects the browser to `/login?sso_code={uuid}`, the frontend POSTs that code to `/auth/sso/exchange`, and the exchange returns normal access + refresh tokens. Single-use and time-limited — if the browser never completes the exchange, the code expires harmlessly.
+
+Group-to-role mapping uses a priority dict (`admin:3 > approver:2 > ic:1`) so users who belong to multiple groups always get their highest entitled role. Groups are written back to `users.sso_groups` on every login, which means the nginx `auth_request` endpoint for per-app group access always reflects current IdP state without an extra IdP call at request time.
+
+One deliberate constraint: local admin accounts (those with a `hashed_password`) are never demoted by SSO role mappings. An IdP misconfiguration that returns no groups or the wrong groups for the setup admin cannot lock the operator out of their own instance.
+
 ---
 
 ## The LLM scanner — where it helps and where it doesn't

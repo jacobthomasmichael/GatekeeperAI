@@ -22,8 +22,11 @@ GatekeeperAI is an on-premises platform that lets enterprise teams safely adopt 
 - **Risk tiering** — apps are automatically scored and assigned a risk tier (low / medium / high / critical) that determines review urgency
 - **SLA enforcement** — overdue approvals are flagged and escalators are notified via email
 - **Encrypted secret injection** — per-app secrets are AES-256 encrypted at rest and injected at container startup
+- **Per-app access control** — apps are private by default; owners grant access by individual email or by SSO group; nginx `auth_request` enforces this on every request
+- **SSO / OIDC** — connect Okta, Azure AD, Google Workspace, Keycloak, or any OIDC-compliant provider; accounts auto-provisioned on first login; IdP groups map to platform roles and per-app access
+- **Passkeys** — Touch ID / Face ID / Windows Hello as the default sign-in method; password and SSO sign-in are also supported
 - **Audit log** — every action (approval, deployment, secret change) is recorded with actor, IP, and timestamp
-- **Admin panel** — user management (create, disable, change roles), audit log viewer, platform-wide metrics
+- **Admin panel** — user management, SSO configuration, audit log viewer, platform-wide metrics
 - **Setup wizard** — first-run wizard configures the instance with no config-file editing required
 - **Secure by default** — JWT with refresh token rotation, rate limiting on all endpoints, security headers (CSP, HSTS, etc.), non-root containers
 - **OpenTelemetry instrumentation** — distributed tracing across FastAPI, SQLAlchemy, Celery, and Redis; ships to any OTLP-compatible backend (Grafana Tempo, Honeycomb, Datadog, Jaeger) via a single env var
@@ -39,7 +42,7 @@ GatekeeperAI is an on-premises platform that lets enterprise teams safely adopt 
 | Container runtime | Docker SDK (Python) |
 | LLM | Anthropic Claude API |
 | Frontend | Next.js 16 (App Router) + Tailwind CSS |
-| Auth | JWT (access + refresh) + WebAuthn passkeys |
+| Auth | JWT (access + refresh) + WebAuthn passkeys + OIDC/SSO (authlib) |
 | Observability | OpenTelemetry (OTLP export to any compatible backend) |
 
 ---
@@ -86,7 +89,9 @@ worker/         Celery task definitions (deploy, SLA checks)
 | `approver` | Everything an IC can do, plus review and decide on pending approvals, view all deployments |
 | `admin` | Everything an approver can do, plus manage users, stop/start deployments, view audit logs |
 
-New users are created by an admin — there is no public self-registration.
+New users are created by an admin, or provisioned automatically on first SSO login when an OIDC provider is configured. There is no public self-registration.
+
+When SSO is enabled, IdP groups are refreshed on every login and can be mapped to roles in the Admin → SSO tab. Local admin accounts (created during setup with a password) are never demoted by SSO role mappings — they keep their role regardless of what the IdP returns.
 
 ---
 

@@ -187,7 +187,55 @@ You're now logged in as the administrator. Bookmark **http://localhost:3000** fo
 
 ---
 
-## Step 7 — Submit your first app
+## Step 7 — Configure SSO (optional)
+
+If your organisation uses an identity provider like **Okta, Azure AD, Google Workspace, or Keycloak**, you can connect GatekeeperAI to it so employees sign in with their existing company credentials. This step is optional — passkey and password sign-in continue to work without it.
+
+### What SSO gives you
+
+- **No separate GatekeeperAI accounts** — users sign in with whatever they already use at work.
+- **Automatic account provisioning** — the first time a user signs in via SSO, an account is created for them automatically.
+- **Group-based role assignment** — map your IdP groups to GatekeeperAI roles (IC, Approver, Admin). Users get the highest role their groups qualify for, updated on every login.
+- **Group-based app access** — app owners can grant an entire IdP group access to a deployed app, rather than adding users one by one.
+
+### How to set it up
+
+1. Log in as an administrator and go to **Admin → SSO** in the navigation.
+2. Enter the following information from your identity provider:
+
+   | Field | Where to find it |
+   |---|---|
+   | **Provider Name** | A display name for the sign-in button (e.g. "Okta") |
+   | **Discovery URL** | Your IdP's OIDC discovery document URL. Ends in `/.well-known/openid-configuration`. |
+   | **Client ID** | From your IdP's application/client settings |
+   | **Client Secret** | From your IdP's application/client settings |
+   | **Group Claim Key** | The name of the claim in the ID token that contains group membership (default: `groups`) |
+   | **Default Role** | The role new SSO users receive when none of their groups match a mapping (default: `ic`) |
+
+3. Optionally add **Role Mappings** — one row per group. Example: map `gk-approvers` → `approver` and `gk-admins` → `admin`.
+4. Click **Test connection** to verify GatekeeperAI can reach your provider's discovery document.
+5. Click **Enable SSO**. A "Sign in with [Provider Name]" button will appear on the login page immediately.
+
+> **Azure AD note:** By default, Azure AD includes group Object IDs (GUIDs) in the token, not display names. Enter the Object IDs in the Role Mappings and Group Access fields, or configure your Azure AD app to emit group display names instead.
+
+> **Google Workspace note:** Google's standard OIDC tokens do not include a groups claim. All GWS users receive the Default Role. Per-app group access is not available through Google SSO without a custom groups claim setup.
+
+> **Admin lockout protection:** Your original administrator account (created during the setup wizard with a password) is never affected by SSO role mappings. Even if SSO returns no groups or a lower-privilege role, that account keeps its admin role permanently.
+
+### Redirect URI to register with your identity provider
+
+When creating the application in your IdP, you'll be asked for a **redirect URI** (also called a callback URL). Use:
+
+```
+https://your-domain.com/api/v1/auth/sso/callback
+```
+
+Replace `your-domain.com` with the value of `APP_BASE_URL` in your `.env` file (without a trailing slash).
+
+---
+
+## Step 8 — Submit your first app
+
 
 There are two ways to submit an app to GatekeeperAI. Most users should start with the ZIP upload — it requires no technical setup at all.
 
@@ -246,7 +294,7 @@ The exact git commands — with the real repository URL — are shown in the das
 
 ---
 
-## Step 8 — Starting GatekeeperAI in the future
+## Step 9 — Starting GatekeeperAI in the future
 
 You don't need to go through the setup steps again. The next time you want to run GatekeeperAI:
 
