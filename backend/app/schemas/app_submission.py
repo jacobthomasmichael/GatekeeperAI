@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -77,3 +77,13 @@ class AppResponse(BaseModel):
     allowed_users: list[uuid.UUID] = []
     allowed_groups: list[str] = []
     rejection: Optional[RejectionFeedback] = None
+
+    @field_validator("allowed_users", mode="before")
+    @classmethod
+    def coerce_allowed_users(cls, v: Any) -> list:
+        return v if v is not None else []
+
+    @field_validator("allowed_groups", mode="before")
+    @classmethod
+    def coerce_allowed_groups(cls, v: Any) -> list:
+        return v if v is not None else []

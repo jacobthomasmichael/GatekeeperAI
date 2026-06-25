@@ -2,6 +2,7 @@ import re
 import uuid
 from datetime import datetime
 
+from typing import Any
 from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 
 
@@ -42,6 +43,11 @@ class UserResponse(BaseModel):
     sso_subject: str | None = None
     sso_groups: list[str] = []
     created_at: datetime
+
+    @field_validator("sso_groups", mode="before")
+    @classmethod
+    def coerce_sso_groups(cls, v: Any) -> list[str]:
+        return v if v is not None else []
 
 
 class TokenResponse(BaseModel):
