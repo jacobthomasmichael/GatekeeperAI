@@ -42,6 +42,8 @@ def build_and_push(
     image_tag = f"{commit_sha[:12]}" if commit_sha else str(uuid.uuid4())[:12]
     image_uri = f"{ecr_registry}/gatekeeperai-apps/{safe_name}:{image_tag}"
     s3_key = f"builds/{safe_name}/{image_tag}.tar.gz"
+    # K8s names max 63 chars: "build-" (6) + safe_name + "-" (1) + image_tag (12) ≤ 63
+    _build_name = safe_name[:44]
 
     # --- Upload build context to S3 ---
     context_tar = _create_context_tar(build_dir)
@@ -56,7 +58,7 @@ def build_and_push(
     _load_k8s_config()
     batch_v1 = client.BatchV1Api()
 
-    job_name = f"build-{safe_name}-{image_tag}"
+    job_name = f"build-{_build_name}-{image_tag}"
     job_body = _kaniko_job(
         job_name=job_name,
         image_uri=image_uri,
