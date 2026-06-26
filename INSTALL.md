@@ -316,6 +316,137 @@ Any SSH keys you added to `infra/authorized_keys` are preserved across restarts.
 
 ---
 
+## Kubernetes / EKS deployment (enterprise)
+
+The steps above use Docker Compose and run everything on a single server. For enterprise deployments that need horizontal scaling, managed databases, and isolated app namespaces, GatekeeperAI ships a **Helm chart** and **Terraform module** for Amazon EKS.
+
+> **Prerequisites:** AWS account, `terraform` CLI, `kubectl`, `helm` CLI, and the AWS CLI configured with appropriate permissions.
+
+---
+
+### Part 1 — Provision infrastructure with Terraform
+
+```bash
+cd infra/terraform
+terraform init
+terraform apply -var="db_password=<strong-password>"
+```
+
+This creates:
+- EKS 1.31 cluster (managed node group, t3.medium, min 2 / max 10)
+- RDS PostgreSQL 16 (single-AZ by default; set `multi_az = true` in `main.tf` before storing real data)
+- ElastiCache Redis 7
+- ECR repositories for platform images and deployed apps
+- EFS filesystem for shared git-repos and nginx-apps volumes
+- VPC, subnets, security groups, IAM roles, and IRSA for the worker pod
+
+After apply, configure `kubectl`:
+
+```bash
+$(terraform output -raw kubeconfig_command)
+```
+
+---
+
+### Part 2 — One-time cluster dependencies
+
+Install the EFS CSI driver and nginx-ingress controller (only needed once per cluster):
+
+```bash
+# EFS CSI driver (for shared EFS volumes)
+kubectl apply -k "github.com/kubernetes-sigs/aws-efs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.7"
+
+# nginx-ingress controller
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  -n ingress-nginx --create-namespace
+
+# cert-manager (for TLS via Let's Encrypt)
+helm repo add jetstack https://charts.jetstack.io
+helm upgrade --install cert-manager jetstack/cert-manager \
+  -n cert-manager --create-namespace \
+  --set installCRDs=true
+```
+
+---
+
+### Part 3 — Install GatekeeperAI with Helm
+
+Get the Terraform outputs you'll need:
+
+```bash
+terraform output ecr_registry_url      # ECR registry URL
+terraform output efs_id                # EFS filesystem ID (e.g. fs-0a1b2c3d)
+terraform output worker_irsa_role_arn  # IRSA role ARN for the worker pod
+terraform output rds_endpoint          # RDS hostname
+terraform output redis_endpoint        # ElastiCache hostname
+terraform output build_context_bucket # S3 bucket for Kaniko build contexts
+```
+
+Then install the Helm chart:
+
+```bash
+helm upgrade --install gatekeeperai ./infra/helm/gatekeeperai \
+  -n gatekeeperai --create-namespace \
+  -f infra/helm/gatekeeperai/values-eks.yaml \
+  --set image.registry=$(terraform output -raw ecr_registry_url) \
+  --set image.tag=latest \
+  --set worker.irsaRoleArn=$(terraform output -raw worker_irsa_role_arn) \
+  --set storage.efsFileSystemId=$(terraform output -raw efs_id) \
+  --set aws.ecrRegistry=$(terraform output -raw ecr_registry_url) \
+  --set aws.buildContextBucket=$(terraform output -raw build_context_bucket) \
+  --set ingress.hostname=gatekeeper.yourcompany.com \
+  --set env.appBaseUrl=https://gatekeeper.yourcompany.com \
+  --set secrets.secretKey=<value> \
+  --set secrets.secretEncryptionKey=<value> \
+  --set secrets.anthropicApiKey=<value> \
+  --set "secrets.databaseUrl=postgresql+asyncpg://gatekeeper:<pw>@$(terraform output -raw rds_endpoint):5432/gatekeeperai" \
+  --set "secrets.redisUrl=redis://$(terraform output -raw redis_endpoint):6379/0"
+```
+
+> **Production note:** Passing secrets via `--set` stores them in the Helm release secret in etcd. For production, use [External Secrets Operator](https://external-secrets.io) to sync from AWS Secrets Manager instead.
+
+---
+
+### Part 4 — Push platform images to ECR
+
+The CI pipeline (`publish.yml`) pushes to ECR automatically when `ECR_REGISTRY` and `AWS_ROLE_ARN` secrets are set in the GitHub repo. For a manual push:
+
+```bash
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $(terraform output -raw ecr_registry_url)
+docker compose -f infra/docker-compose.yml build
+docker tag gatekeeperai-backend $(terraform output -raw ecr_registry_url)/gatekeeperai/backend:latest
+docker push $(terraform output -raw ecr_registry_url)/gatekeeperai/backend:latest
+# repeat for frontend and git-service
+```
+
+---
+
+### Part 5 — Verify the deployment
+
+```bash
+kubectl get pods -n gatekeeperai
+kubectl get ingress -n gatekeeperai
+```
+
+All pods should reach `Running` status. The Ingress will have an external address from the AWS load balancer. Point your domain's DNS A record at that address, then open `https://gatekeeper.yourcompany.com` and complete the setup wizard.
+
+---
+
+### Updating to a new version on EKS
+
+```bash
+helm upgrade gatekeeperai ./infra/helm/gatekeeperai \
+  -n gatekeeperai \
+  -f infra/helm/gatekeeperai/values-eks.yaml \
+  --set image.tag=<new-tag> \
+  --reuse-values
+```
+
+The api Deployment runs `alembic upgrade head` as an initContainer on every rollout, so database migrations apply automatically before the new pods start.
+
+---
+
 ## Observability (optional)
 
 GatekeeperAI ships with built-in **OpenTelemetry** instrumentation. Every HTTP request, database query, Celery task (scan pipeline, deploy, SLA checks), and Redis call is automatically traced. By default, traces are discarded so no extra software is required to run GatekeeperAI.

@@ -51,14 +51,14 @@ So the scanner raises the floor and surfaces obvious issues automatically. It do
 
 ## Tradeoffs I made knowingly
 
-**Single-host Docker model**
-Every deployed app runs as a container on the same host as the GatekeeperAI stack. This is the right call for the target deployment (a single EC2 instance or on-prem server), and it keeps the install story simple — one `docker compose up` and everything works. The cost is that there's no isolation between a misbehaving app and the platform itself, and you're constrained to one machine's resources.
+**Single-host Docker model** *(Docker path only)*
+Every deployed app runs as a container on the same host as the GatekeeperAI stack. This is the right call for the target deployment (a single EC2 instance or on-prem server), and it keeps the install story simple — one `docker compose up` and everything works. The cost is that there's no isolation between a misbehaving app and the platform itself, and you're constrained to one machine's resources. The Kubernetes path (`DEPLOY_BACKEND=kubernetes`) addresses this: apps run as Deployments in a dedicated `gatekeeperai-apps` namespace with NetworkPolicy isolation and per-namespace ResourceQuotas — the platform stack and user apps are fully separated.
 
-**nginx config file writes from the Celery worker**
-When an app is deployed, the worker writes a `.conf` file to disk and reloads nginx. It works, but it's a design smell: writing files from an application process to configure a system service is the kind of thing that breaks in subtle ways (permissions, race conditions on concurrent deploys, config syntax errors that take down all apps). At meaningful scale this should be replaced with a proper ingress controller that accepts dynamic configuration via API.
+**nginx config file writes from the Celery worker** *(Docker path only)*
+When an app is deployed on the Docker path, the worker writes a `.conf` file to disk and reloads nginx via a sidecar watcher. It works, but writing files from an application process to configure a system service breaks in subtle ways (permissions, race conditions on concurrent deploys, config syntax errors that take down all apps). The Kubernetes path eliminates this entirely: the worker calls the Kubernetes API to create/patch an `Ingress` resource in the `gatekeeperai-apps` namespace — nginx-ingress picks it up dynamically with no file I/O and no reload subprocess.
 
-**No container registry**
-Built images are stored on the local Docker host. At small scale this is fine. At larger scale you'd want images pushed to a registry (ECR, GHCR) so multiple hosts can pull them, and so the local disk doesn't fill up. The current design has no image pruning — something to add.
+**No container registry** *(Docker path only)*
+On the Docker path, built images are stored on the local Docker host with no pruning. The Kubernetes path uses ECR: Kaniko builds push directly to a per-app ECR repository with a lifecycle policy keeping only the last 3 images per app. The platform images (api, worker, frontend) are also mirrored to ECR via CI for EKS installs.
 
 **Git-based submission as a first-class path**
 The platform supports both zip upload and git push. Git push goes through a separate SSH container that runs the post-receive hook, which adds operational surface area (another container, SSH key management, hook authentication). For most internal teams, zip upload is simpler and sufficient. The git path exists because it's the right long-term model — version history, incremental pushes, CI integration — but it adds complexity that a simpler v1 might have deferred.
@@ -67,21 +67,21 @@ The platform supports both zip upload and git push. Git push goes through a sepa
 
 ## What breaks first at 100x scale
 
-**The single Docker host.** One hundred deployed apps mean one hundred running containers on one machine. The resource limits (512 MB RAM, 0.5 CPU per container) provide some protection, but a single host isn't the right model here. Docker was the right call for a fast first pass — the primitives (build, run, stop, logs) map directly to the platform's operations and kept the v1 install story to a single `docker compose up`. The target architecture is EKS or a self-hosted Kubernetes cluster, where each deployed app becomes a pod with proper resource quotas, horizontal scaling, and network policies. The container-per-app model translates cleanly — it's the orchestration layer underneath that needs to change, not the deployment model itself.
+**The single Docker host** *(addressed in Kubernetes path)*. One hundred deployed apps mean one hundred running containers on one machine. Docker was the right call for a fast first pass — the primitives (build, run, stop, logs) map directly to the platform's operations and kept the v1 install story to a single `docker compose up`. The Kubernetes path is now implemented: each deployed app becomes a Kubernetes Deployment in the `gatekeeperai-apps` namespace with resource limits, NetworkPolicy isolation, and a namespace-wide ResourceQuota. HPA on the API pod handles traffic spikes. KEDA scales the Celery workers from Redis queue depth.
 
-**The auth_request subrequest on every proxied request.** At 100x traffic, every request to every deployed app hits the GatekeeperAI API for an auth check. The verify endpoint is fast (JWT decode + one DB query), but it becomes a bottleneck and a single point of failure. The fix is caching at the nginx layer — a short TTL cache keyed on the token + app name would eliminate most of the subrequests.
+**The auth_request subrequest on every proxied request** *(partially addressed)*. At 100x traffic, every request to every deployed app hits the GatekeeperAI API for an auth check. The Kubernetes path adds a 30-second nginx-ingress cache keyed on the Authorization header + app name, eliminating most subrequests. The verify endpoint itself (JWT decode + one DB query) is also the HPA scale target — it scales out under load rather than becoming a single point of failure.
 
-**The LLM scanner cost.** At 100x submissions, Claude API costs become significant — especially for large codebases. Rate limiting per submission and cost controls per team would be necessary. An async queue with backpressure would prevent a burst of submissions from generating a large unexpected bill.
+**The LLM scanner cost.** At 100x submissions, Claude API costs become significant — especially for large codebases. Rate limiting per submission and cost controls per team would be necessary. An async queue with backpressure would prevent a burst of submissions from generating a large unexpected bill. Not yet addressed.
 
-**Local image storage.** Docker images build up on disk with no pruning. A container registry and a cleanup policy are necessary before this runs unsupervised.
+**Local image storage** *(addressed in Kubernetes path)*. Docker images build up on disk with no pruning. The Kubernetes path pushes images to ECR with a lifecycle policy (keep last 3 per app, expire untagged after 1 day).
 
-**Single Celery worker.** The current setup runs one worker process handling both scan tasks (fast, CPU-bound) and deploy tasks (slow, I/O-bound). Dedicated queues per task type with separate worker pools would prevent a batch of large deploys from starving the scan queue.
+**Single Celery worker** *(addressed in Kubernetes path)*. The Docker path runs one worker process handling both scan tasks (fast, CPU-bound) and deploy tasks (slow, I/O-bound). The Kubernetes Helm chart runs two worker Deployments: one consuming the `scans,celery` queues (4 concurrent), one consuming the `deploys` queue (2 concurrent). KEDA scales the scan worker from Redis queue depth.
 
 ---
 
 ## What I'd do differently starting over
 
-**The nginx config file approach.** I'd evaluate Traefik or Caddy from the start — both support dynamic configuration via API and would eliminate the file-write pattern. The current approach works but it's the part of the codebase I'd be most cautious about modifying.
+**The nginx config file approach.** I'd evaluate Traefik or Caddy from the start — both support dynamic configuration via API and would eliminate the file-write pattern. On the Docker path this is still the approach used, and it remains the part of the codebase I'd be most cautious about modifying. The Kubernetes path replaced it with dynamic Ingress resources, which is cleaner but couples the deploy pipeline to the nginx-ingress controller specifically.
 
 **App type detection.** The current heuristic reads `requirements.txt` and `package.json` to classify apps (Streamlit, Gradio, Flask, Node, static). It's surprisingly effective but breaks on non-standard layouts. A more robust approach would scan all files for entry point patterns rather than relying on one or two indicator files.
 
