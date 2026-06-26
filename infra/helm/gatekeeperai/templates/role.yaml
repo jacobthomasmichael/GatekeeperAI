@@ -19,3 +19,36 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+# Phase 3: Role in gatekeeperai-builds namespace so the worker can create
+# and monitor Kaniko Jobs for building app images.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-worker-builds
+  namespace: gatekeeperai-builds
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-worker-builds
+  namespace: gatekeeperai-builds
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "gatekeeperai.fullname" . }}-worker-builds
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "gatekeeperai.fullname" . }}-worker
+    namespace: {{ .Release.Namespace }}

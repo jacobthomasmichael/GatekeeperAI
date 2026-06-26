@@ -94,68 +94,45 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
 
             # Build image (old container stays live during this step)
             safe_name = re.sub(r"[^a-z0-9_-]", "-", submission.name.lower())
-            image_tag = f"gatekeeperai/{safe_name}:{scan.commit_sha[:8] if scan.commit_sha else 'latest'}"
-
-            try:
-                container_service.build_image(work_dir, image_tag)
-            except Exception as e:
-                await _fail(db, deployment, submission, f"docker build failed: {e}")
-                return
 
             # Load secrets as env vars; inject PYTHONUNBUFFERED so Python app
-            # logs flush immediately and appear in `docker logs`.
+            # logs flush immediately.
             from app.services.secrets_service import decrypt_all
             secrets = await decrypt_all(str(submission.id), db)
             if (submission.detected_type or "").startswith("python"):
                 secrets.setdefault("PYTHONUNBUFFERED", "1")
 
-            # Backfill stable port/name for apps deployed before this feature shipped
-            if scan.scan_type == "update" and submission.stable_external_port is None and deployment.external_port:
-                submission.stable_external_port = deployment.external_port
-                submission.stable_container_name = deployment.container_name
+            if settings.DEPLOY_BACKEND == "kubernetes":
+                # ── Kubernetes path ───────────────────────────────────────────
+                # Build: upload context to S3, run Kaniko Job, push to ECR
+                from app.services import k8s_build_service, k8s_app_service
+                from app.services.k8s_app_service import APPS_NAMESPACE
 
-            is_update = scan.scan_type == "update" and submission.stable_external_port is not None
-
-            if is_update:
-                external_port = submission.stable_external_port
-                container_name = submission.stable_container_name
-                old_container_id = deployment.container_id
-            else:
-                # First deployment: pick a port and persist it as stable
                 try:
-                    external_port = container_service.pick_external_port()
-                except RuntimeError as e:
-                    await _fail(db, deployment, submission, str(e))
+                    image_uri = k8s_build_service.build_and_push(
+                        build_dir=work_dir,
+                        safe_name=safe_name,
+                        ecr_registry=settings.ECR_REGISTRY,
+                        commit_sha=scan.commit_sha or "",
+                    )
+                except Exception as e:
+                    await _fail(db, deployment, submission, f"kaniko build failed: {e}")
                     return
-                container_name = f"gka-{safe_name}-{str(submission.id)[:8]}"
-                submission.stable_external_port = external_port
-                submission.stable_container_name = container_name
-                old_container_id = None
 
-            # Start new container FIRST — old container stays live until this succeeds
-            # Clear unique DB fields before starting so Docker name/ID don't conflict
-            deployment.container_id = None
-            deployment.container_name = None
-            await db.flush()
+                # Deploy: create/update K8s Deployment + Secret
+                try:
+                    k8s_deployment_name = k8s_app_service.deploy_app(
+                        safe_name=safe_name,
+                        image_uri=image_uri,
+                        internal_port=internal_port,
+                        env_vars=secrets,
+                    )
+                except Exception as e:
+                    await _fail(db, deployment, submission, f"k8s deploy failed: {e}")
+                    return
 
-            try:
-                container = container_service.start_container(
-                    image_tag=image_tag,
-                    container_name=container_name,
-                    internal_port=internal_port,
-                    external_port=external_port,
-                    env_vars=secrets,
-                    allowed_egress_urls=deployment.allowed_egress_urls or [],
-                )
-            except Exception as e:
-                # New container failed to start — old container is still running, restore DB
-                deployment.container_id = old_container_id
-                deployment.container_name = container_name if not is_update else deployment.container_name
-                await _fail(db, deployment, submission, f"docker run failed: {e}")
-                return
-
-            try:
-                if settings.DEPLOY_BACKEND == "kubernetes":
+                # Routing: create/update Ingress + ClusterIP Service
+                try:
                     from app.services.k8s_ingress_service import write_app_ingress
                     write_app_ingress(
                         safe_name=safe_name,
@@ -163,43 +140,126 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
                         app_base_url=settings.APP_BASE_URL,
                         visibility=submission.visibility,
                     )
-                else:
-                    nginx_service.write_app_config(safe_name, external_port, submission.visibility)
-                public_url = f"{settings.APP_BASE_URL}/apps/{safe_name}/"
-            except Exception as e:
-                logger.warning("routing config write failed (app will still be accessible via port): %s", e)
+                except Exception as e:
+                    logger.warning("k8s ingress write failed (app may be unreachable via URL): %s", e)
+
                 public_url = f"{settings.APP_BASE_URL}/apps/{safe_name}/"
 
-            deployment.container_id = container.id
-            deployment.container_name = container_name
-            deployment.image_tag = image_tag
-            deployment.status = "running"
-            deployment.started_at = datetime.now(timezone.utc)
-            deployment.internal_port = internal_port
-            deployment.external_port = external_port
-            deployment.public_url = public_url
-            deployment.scan_id = scan.id
-            deployment.env_vars_injected = {k: "***" for k in secrets}
+                # Poll K8s until the pod is ready (up to 120s)
+                deadline = datetime.now(timezone.utc).timestamp() + 120
+                import time as _time
+                while _time.time() < deadline:
+                    status = k8s_app_service.get_app_status(safe_name)
+                    if status["available"]:
+                        break
+                    _time.sleep(5)
 
-            submission.status = "deployed"
+                deployment.image_tag = image_uri
+                deployment.status = "running"
+                deployment.started_at = datetime.now(timezone.utc)
+                deployment.internal_port = internal_port
+                deployment.external_port = None  # no host port in K8s
+                deployment.public_url = public_url
+                deployment.scan_id = scan.id
+                deployment.env_vars_injected = {k: "***" for k in secrets}
+                deployment.k8s_namespace = APPS_NAMESPACE
+                deployment.k8s_deployment_name = k8s_deployment_name
 
-            # Commit before stopping the old container. If the commit fails we
-            # stop the new container (old is still running) to avoid a leak.
-            try:
+                submission.status = "deployed"
                 await db.commit()
-            except Exception as exc:
-                logger.error(
-                    "DB commit failed after container start, stopping new container to avoid leak: %s", exc
-                )
-                try:
-                    container_service.stop_container(container.id)
-                except Exception:
-                    pass
-                raise
 
-            # DB committed — now safely tear down the old container
-            if old_container_id:
-                container_service.stop_container(old_container_id)
+            else:
+                # ── Docker path (unchanged) ───────────────────────────────────
+                image_tag = f"gatekeeperai/{safe_name}:{scan.commit_sha[:8] if scan.commit_sha else 'latest'}"
+
+                try:
+                    container_service.build_image(work_dir, image_tag)
+                except Exception as e:
+                    await _fail(db, deployment, submission, f"docker build failed: {e}")
+                    return
+
+                # Backfill stable port/name for apps deployed before this feature shipped
+                if scan.scan_type == "update" and submission.stable_external_port is None and deployment.external_port:
+                    submission.stable_external_port = deployment.external_port
+                    submission.stable_container_name = deployment.container_name
+
+                is_update = scan.scan_type == "update" and submission.stable_external_port is not None
+
+                if is_update:
+                    external_port = submission.stable_external_port
+                    container_name = submission.stable_container_name
+                    old_container_id = deployment.container_id
+                else:
+                    # First deployment: pick a port and persist it as stable
+                    try:
+                        external_port = container_service.pick_external_port()
+                    except RuntimeError as e:
+                        await _fail(db, deployment, submission, str(e))
+                        return
+                    container_name = f"gka-{safe_name}-{str(submission.id)[:8]}"
+                    submission.stable_external_port = external_port
+                    submission.stable_container_name = container_name
+                    old_container_id = None
+
+                # Start new container FIRST — old container stays live until this succeeds
+                # Clear unique DB fields before starting so Docker name/ID don't conflict
+                deployment.container_id = None
+                deployment.container_name = None
+                await db.flush()
+
+                try:
+                    container = container_service.start_container(
+                        image_tag=image_tag,
+                        container_name=container_name,
+                        internal_port=internal_port,
+                        external_port=external_port,
+                        env_vars=secrets,
+                        allowed_egress_urls=deployment.allowed_egress_urls or [],
+                    )
+                except Exception as e:
+                    # New container failed to start — old container is still running, restore DB
+                    deployment.container_id = old_container_id
+                    deployment.container_name = container_name if not is_update else deployment.container_name
+                    await _fail(db, deployment, submission, f"docker run failed: {e}")
+                    return
+
+                try:
+                    nginx_service.write_app_config(safe_name, external_port, submission.visibility)
+                    public_url = f"{settings.APP_BASE_URL}/apps/{safe_name}/"
+                except Exception as e:
+                    logger.warning("nginx config write failed (app will still be accessible via port): %s", e)
+                    public_url = f"{settings.APP_BASE_URL}/apps/{safe_name}/"
+
+                deployment.container_id = container.id
+                deployment.container_name = container_name
+                deployment.image_tag = image_tag
+                deployment.status = "running"
+                deployment.started_at = datetime.now(timezone.utc)
+                deployment.internal_port = internal_port
+                deployment.external_port = external_port
+                deployment.public_url = public_url
+                deployment.scan_id = scan.id
+                deployment.env_vars_injected = {k: "***" for k in secrets}
+
+                submission.status = "deployed"
+
+                # Commit before stopping the old container. If the commit fails we
+                # stop the new container (old is still running) to avoid a leak.
+                try:
+                    await db.commit()
+                except Exception as exc:
+                    logger.error(
+                        "DB commit failed after container start, stopping new container to avoid leak: %s", exc
+                    )
+                    try:
+                        container_service.stop_container(container.id)
+                    except Exception:
+                        pass
+                    raise
+
+                # DB committed — now safely tear down the old container
+                if old_container_id:
+                    container_service.stop_container(old_container_id)
 
 
 async def _fail(db, deployment: Deployment, submission: AppSubmission, reason: str) -> None:

@@ -50,6 +50,11 @@ secrets:
   # Full Redis URL, e.g.: redis://<elasticache-endpoint>:6379/0
   redisUrl: ""
 
+aws:
+  region: "us-east-1"
+  buildContextBucket: ""  # S3 bucket for Kaniko build contexts (from terraform output build_context_bucket)
+  ecrRegistry: ""         # ECR registry URL (from terraform output ecr_registry_url)
+
 worker:
   # IAM role ARN for IRSA — set from `terraform output worker_irsa_role_arn`
   irsaRoleArn: ""

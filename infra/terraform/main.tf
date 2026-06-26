@@ -349,6 +349,12 @@ resource "aws_iam_policy" "worker_irsa" {
         Resource = "*"
       },
       {
+        Sid    = "S3BuildContexts"
+        Effect = "Allow"
+        Action = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+        Resource = "arn:aws:s3:::gatekeeperai-build-contexts-*/*"
+      },
+      {
         Sid    = "EKSDescribe"
         Effect = "Allow"
         Action = [
@@ -431,6 +437,23 @@ resource "aws_elasticache_cluster" "redis" {
   }
 }
 
+# ── S3 — Kaniko build contexts ─────────────────────────────────────────────────
+
+resource "aws_s3_bucket" "build_contexts" {
+  bucket        = "gatekeeperai-build-contexts-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
+  tags          = local.common_tags
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "build_contexts" {
+  bucket = aws_s3_bucket.build_contexts.id
+  rule {
+    id     = "expire-build-contexts"
+    status = "Enabled"
+    expiration { days = 7 }
+  }
+}
+
 # ── ECR Repositories ───────────────────────────────────────────────────────────
 
 locals {
@@ -439,6 +462,11 @@ locals {
     "gatekeeperai/frontend",
     "gatekeeperai/git-service",
   ])
+
+  common_tags = {
+    Project   = "gatekeeperai"
+    ManagedBy = "terraform"
+  }
 }
 
 resource "aws_ecr_repository" "repos" {

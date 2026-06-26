@@ -74,3 +74,8 @@ output "kubeconfig_command" {
   description = "Run this to update your local kubeconfig after apply"
   value       = "aws eks update-kubeconfig --region ${var.region} --name ${aws_eks_cluster.main.name}"
 }
+
+output "build_context_bucket" {
+  description = "S3 bucket for Kaniko build contexts — set as aws.buildContextBucket in values-eks.yaml"
+  value       = aws_s3_bucket.build_contexts.bucket
+}

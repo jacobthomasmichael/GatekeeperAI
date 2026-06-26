@@ -34,6 +34,10 @@ class Settings(BaseSettings):
 
     DEPLOY_BACKEND: str = "docker"  # "docker" or "kubernetes"
 
+    AWS_REGION: str = "us-east-1"
+    BUILD_CONTEXT_BUCKET: str = ""  # Required when DEPLOY_BACKEND=kubernetes; S3 bucket for Kaniko build contexts
+    ECR_REGISTRY: str = ""  # Required when DEPLOY_BACKEND=kubernetes; e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com"
+
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 

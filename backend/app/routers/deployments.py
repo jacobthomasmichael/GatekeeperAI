@@ -148,7 +148,7 @@ async def get_app_health(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Live container health — accessible to the app owner."""
+    """Live container/pod health — accessible to the app owner."""
     if current_user.role == "ic":
         app = await db.get(AppSubmission, submission_id)
         if not app:
@@ -162,10 +162,22 @@ async def get_app_health(
         select(Deployment).where(Deployment.submission_id == submission_id)
     )
     deployment = result.scalar_one_or_none()
-    if not deployment or not deployment.container_id:
-        return {"status": "no_container", "restart_count": 0, "logs": None}
 
-    return container_service.get_container_health(deployment.container_id)
+    from app.config import settings
+    if settings.DEPLOY_BACKEND == "kubernetes":
+        if not deployment or not deployment.k8s_deployment_name:
+            return {"status": "no_deployment", "restart_count": 0, "logs": None}
+        from app.services.k8s_app_service import get_app_status
+        safe_name = deployment.k8s_deployment_name.removeprefix("gk-app-")
+        k8s_status = get_app_status(safe_name)
+        status_str = "running" if k8s_status["available"] else (
+            "stopped" if k8s_status["total_replicas"] == 0 else "starting"
+        )
+        return {"status": status_str, "restart_count": 0, "logs": None}
+    else:
+        if not deployment or not deployment.container_id:
+            return {"status": "no_container", "restart_count": 0, "logs": None}
+        return container_service.get_container_health(deployment.container_id)
 
 
 @router.get("/{deployment_id}/logs")
@@ -178,13 +190,28 @@ async def get_logs(
     deployment = await db.get(Deployment, deployment_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found")
-    if deployment.container_id:
-        try:
-            live = container_service.get_container_logs(deployment.container_id, tail=tail)
-            if live:
-                return {"logs": live}
-        except Exception:
-            pass
+
+    from app.config import settings
+    if settings.DEPLOY_BACKEND == "kubernetes":
+        if deployment.k8s_deployment_name:
+            import re as _re
+            from app.services.k8s_app_service import get_app_logs
+            # Derive safe_name from k8s_deployment_name ("gk-app-{safe_name}")
+            safe_name = deployment.k8s_deployment_name.removeprefix("gk-app-")
+            try:
+                live = get_app_logs(safe_name, tail_lines=tail)
+                if live:
+                    return {"logs": live}
+            except Exception:
+                pass
+    else:
+        if deployment.container_id:
+            try:
+                live = container_service.get_container_logs(deployment.container_id, tail=tail)
+                if live:
+                    return {"logs": live}
+            except Exception:
+                pass
     return {"logs": deployment.logs_cache or ""}
 
 
@@ -198,12 +225,28 @@ async def get_status(
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found")
 
+    from app.config import settings
     live_status = deployment.status
-    if deployment.container_id:
-        live_status = container_service.get_container_status(deployment.container_id)
-        if live_status != deployment.status and live_status in ("running", "exited", "dead"):
-            deployment.status = live_status if live_status == "running" else "stopped"
-            await db.commit()
+    if settings.DEPLOY_BACKEND == "kubernetes":
+        if deployment.k8s_deployment_name:
+            from app.services.k8s_app_service import get_app_status
+            safe_name = deployment.k8s_deployment_name.removeprefix("gk-app-")
+            k8s_status = get_app_status(safe_name)
+            if k8s_status["available"]:
+                live_status = "running"
+            elif k8s_status["total_replicas"] == 0:
+                live_status = "stopped"
+            else:
+                live_status = "starting"
+            if live_status != deployment.status:
+                deployment.status = live_status
+                await db.commit()
+    else:
+        if deployment.container_id:
+            live_status = container_service.get_container_status(deployment.container_id)
+            if live_status != deployment.status and live_status in ("running", "exited", "dead"):
+                deployment.status = live_status if live_status == "running" else "stopped"
+                await db.commit()
 
     return {
         "deployment_id": deployment_id,

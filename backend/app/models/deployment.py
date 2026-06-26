@@ -25,6 +25,8 @@ class Deployment(Base):
     allowed_egress_urls: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     env_vars_injected: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     logs_cache: Mapped[str | None] = mapped_column(String(65535), nullable=True)
+    k8s_namespace: Mapped[str | None] = mapped_column(String(253), nullable=True)
+    k8s_deployment_name: Mapped[str | None] = mapped_column(String(253), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
