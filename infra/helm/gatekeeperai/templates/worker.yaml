@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-worker
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  {{- if not .Values.keda.enabled }}
+  replicas: {{ .Values.replicas.worker }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "gatekeeperai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "gatekeeperai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      # IRSA ServiceAccount — binds to the IAM role via projected token
+      serviceAccountName: {{ include "gatekeeperai.fullname" . }}-worker
+      containers:
+        - name: worker
+          image: {{ include "gatekeeperai.image" (dict "registry" .Values.image.registry "name" "gatekeeperai/backend" "tag" .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - celery
+            - -A
+            - worker.celery_app.celery_app
+            - worker
+            - --loglevel=info
+            - --queues=scans,celery
+            - --concurrency=4
+          env:
+            {{- include "gatekeeperai.backendEnv" . | nindent 12 }}
+            - name: BUILD_CONTEXT_BUCKET
+              value: {{ .Values.aws.buildContextBucket | quote }}
+            - name: ECR_REGISTRY
+              value: {{ .Values.aws.ecrRegistry | quote }}
+          volumeMounts:
+            - name: git-repos
+              mountPath: /git-repos
+            - name: nginx-apps
+              mountPath: /nginx-apps
+            # Docker socket removed in Phase 3 — worker uses Kaniko Jobs and K8s API
+          resources:
+            {{- toYaml .Values.resources.worker | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: git-repos
+          persistentVolumeClaim:
+            claimName: {{ include "gatekeeperai.fullname" . }}-git-repos
+        - name: nginx-apps
+          persistentVolumeClaim:
+            claimName: {{ include "gatekeeperai.fullname" . }}-nginx-apps

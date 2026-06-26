@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-nginx-cache
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+data:
+  # Injected into nginx-ingress via the nginx-ingress controller ConfigMap.
+  # These snippets enable a 30-second cache on auth subrequests, keyed on
+  # Authorization header + app name — eliminates most verify endpoint calls at load.
+  #
+  # NOTE: These values must be copied into the nginx-ingress controller's own
+  # ConfigMap (typically nginx-ingress/ingress-nginx-controller in the ingress-nginx
+  # namespace) — that is a cluster-level concern and cannot be set per-app from here.
+  # Apply once after cluster setup:
+  #   kubectl patch configmap ingress-nginx-controller -n ingress-nginx \
+  #     --patch "$(kubectl get configmap -n ingress-nginx ingress-nginx-controller -o json \
+  #       | jq '.data["http-snippet"] = "proxy_cache_path /tmp/auth_cache levels=1:2 keys_zone=auth_cache:10m max_size=100m inactive=2m use_temp_path=off;" \
+  #           | .data["location-snippet"] = "auth_request_set $auth_cache_status $upstream_cache_status;"')"
+  http-snippet: |
+    proxy_cache_path /tmp/auth_cache levels=1:2 keys_zone=auth_cache:10m max_size=100m inactive=2m use_temp_path=off;
+  location-snippet: |
+    auth_request_set $auth_cache_status $upstream_cache_status;

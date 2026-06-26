@@ -1,0 +1,43 @@
+{{- if .Values.networkPolicy.enabled }}
+# Deny all ingress/egress for pods in gatekeeperai-apps except:
+# - ingress from nginx-ingress controller
+# - egress to kube-dns (UDP 53) for name resolution
+# Deployed apps cannot reach the GatekeeperAI platform pods or each other.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-app-isolation
+  namespace: gatekeeperai-apps
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+spec:
+  podSelector: {}  # applies to all pods in gatekeeperai-apps namespace
+  policyTypes:
+  - Ingress
+  - Egress
+  egress:
+  # Allow DNS
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+  # Allow egress to internet (apps need to make outbound calls)
+  # Restrict this further per-app once egress scanner findings are wired up
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8      # block access to VPC-internal resources
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  ingress:
+  # Allow ingress only from nginx-ingress controller pods
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+{{- end }}

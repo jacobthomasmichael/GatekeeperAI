@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gatekeeperai-apps
+  labels:
+    managed-by: gatekeeperai
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gatekeeperai-builds
+  labels:
+    managed-by: gatekeeperai

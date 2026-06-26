@@ -1,0 +1,17 @@
+# StorageClass for the AWS EFS CSI driver.
+# Prerequisites:
+#   1. EFS CSI driver installed in the cluster:
+#      kubectl apply -k "github.com/kubernetes-sigs/aws-efs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.7"
+#   2. EFS filesystem created (see infra/terraform/efs.tf)
+#
+# The reclaimPolicy is Retain — deleting the PVC does not delete the underlying
+# EFS data. This is intentional for a data store holding git repos and nginx configs.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.storage.storageClass }}
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+provisioner: efs.csi.aws.com
+reclaimPolicy: Retain
+volumeBindingMode: Immediate

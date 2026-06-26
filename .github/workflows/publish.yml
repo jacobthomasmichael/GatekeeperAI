@@ -17,6 +17,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write  # Required for OIDC-based AWS credential federation
 
     steps:
       - name: Checkout
@@ -29,14 +30,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # ── ECR login (skipped if ECR_REGISTRY secret is not set) ────────────────
+      - name: Configure AWS credentials for ECR
+        if: ${{ secrets.ECR_REGISTRY != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Log in to ECR
+        if: ${{ secrets.ECR_REGISTRY != '' }}
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      # ── Backend ───────────────────────────────────────────────────────────────
 
       - name: Extract metadata — backend
         id: backend-meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.BACKEND_IMAGE }}
+          images: |
+            ${{ env.BACKEND_IMAGE }}
+            ${{ secrets.ECR_REGISTRY != '' && format('{0}/gatekeeperai/backend', secrets.ECR_REGISTRY) || '' }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -53,11 +71,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # ── Frontend ──────────────────────────────────────────────────────────────
+
       - name: Extract metadata — frontend
         id: frontend-meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.FRONTEND_IMAGE }}
+          images: |
+            ${{ env.FRONTEND_IMAGE }}
+            ${{ secrets.ECR_REGISTRY != '' && format('{0}/gatekeeperai/frontend', secrets.ECR_REGISTRY) || '' }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -76,11 +98,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # ── Git service ───────────────────────────────────────────────────────────
+
       - name: Extract metadata — git-service
         id: git-service-meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.GIT_SERVICE_IMAGE }}
+          images: |
+            ${{ env.GIT_SERVICE_IMAGE }}
+            ${{ secrets.ECR_REGISTRY != '' && format('{0}/gatekeeperai/git-service', secrets.ECR_REGISTRY) || '' }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

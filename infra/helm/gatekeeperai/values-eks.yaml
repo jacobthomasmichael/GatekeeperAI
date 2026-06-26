@@ -1,0 +1,36 @@
+# EKS production overrides for the GatekeeperAI Helm chart.
+#
+# Usage:
+#   helm upgrade --install gatekeeperai ./infra/helm/gatekeeperai \
+#     -f infra/helm/gatekeeperai/values-eks.yaml \
+#     --set image.registry=<ecr_registry_url> \
+#     --set secrets.secretKey=<value> \
+#     --set secrets.secretEncryptionKey=<value> \
+#     --set secrets.anthropicApiKey=<value> \
+#     --set secrets.databaseUrl=<value> \
+#     --set secrets.redisUrl=<value> \
+#     --set worker.irsaRoleArn=<worker_irsa_role_arn> \
+#     --set ingress.hostname=<your-domain> \
+#     --set env.appBaseUrl=https://<your-domain> \
+#     --set env.hookSecret=<value> \
+#     --set env.gitSshHost=<nlb-hostname>
+#
+# Get the values from Terraform:
+#   terraform -chdir=infra/terraform output ecr_registry_url
+#   terraform -chdir=infra/terraform output worker_irsa_role_arn
+#   terraform -chdir=infra/terraform output rds_endpoint
+#   terraform -chdir=infra/terraform output redis_endpoint
+
+image:
+  # Set to ECR registry URL from `terraform output ecr_registry_url`
+  # e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com
+  registry: ""
+
+replicas:
+  api: 2
+  frontend: 2
+  worker: 1
+  beat: 1
+
+storage:
+  storageClass: efs-sc

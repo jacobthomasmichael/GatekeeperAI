@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-git
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: git
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "gatekeeperai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: git
+  template:
+    metadata:
+      labels:
+        {{- include "gatekeeperai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: git
+    spec:
+      containers:
+        - name: git
+          image: {{ include "gatekeeperai.image" (dict "registry" .Values.image.registry "name" "gatekeeperai/git-service" "tag" .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: ssh
+              containerPort: 22
+              protocol: TCP
+          env:
+            - name: GATEKEEPER_API_URL
+              value: "http://{{ include "gatekeeperai.fullname" . }}-api:8000"
+          volumeMounts:
+            - name: git-repos
+              mountPath: /git-repos
+            - name: authorized-keys
+              mountPath: /home/git/.ssh/authorized_keys
+              subPath: authorized_keys
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources.git | nindent 12 }}
+      volumes:
+        - name: git-repos
+          persistentVolumeClaim:
+            claimName: {{ include "gatekeeperai.fullname" . }}-git-repos
+        - name: authorized-keys
+          configMap:
+            name: {{ include "gatekeeperai.fullname" . }}-authorized-keys
+            defaultMode: 0600

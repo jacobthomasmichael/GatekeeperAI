@@ -1,0 +1,42 @@
+# Shared volume for per-app nginx .conf files.
+# The worker pod's nginx_service.py writes .conf files here after each deployment.
+# The nginx-apps pod reads them and inotifywait triggers a reload when they change.
+# Replaces the docker-compose bind-mount: ./nginx/conf.d/apps:/nginx-apps
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-nginx-apps-pv
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.storage.nginxAppsSize }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ .Values.storage.storageClass }}
+  csi:
+    driver: efs.csi.aws.com
+    # Replace with the EFS filesystem ID from `terraform output efs_id`
+    # For per-directory isolation, use the access point format:
+    #   fs-XXXXXXXXXXXXXXXXX::fsap-XXXXXXXXXXXXXXXXX
+    # Access point ID from: `terraform output efs_nginx_apps_access_point_id`
+    volumeHandle: "{{ required "storage.efsFileSystemId is required for EKS (get it from: terraform output efs_id)" .Values.storage.efsFileSystemId }}"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-nginx-apps
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+  annotations:
+    gatekeeperai.io/efs-filesystem-id: "{{ required "storage.efsFileSystemId is required for EKS (get it from: terraform output efs_id)" .Values.storage.efsFileSystemId }}"
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: {{ .Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.nginxAppsSize }}
+  volumeName: {{ include "gatekeeperai.fullname" . }}-nginx-apps-pv

@@ -24,3 +24,5 @@ class DeploymentResponse(BaseModel):
     created_at: datetime
     app_visibility: str | None = None
     app_public_flagged_at: datetime | None = None
+    k8s_namespace: str | None = None
+    k8s_deployment_name: str | None = None
