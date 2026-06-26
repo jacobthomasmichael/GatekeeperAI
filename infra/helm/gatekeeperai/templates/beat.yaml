@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-beat
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: beat
+spec:
+  # MUST be 1. Celery Beat has no leader election — running multiple replicas
+  # causes every scheduled task (SLA checks, etc.) to fire N times per interval.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "gatekeeperai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: beat
+  # Recreate strategy ensures only one beat process runs at a time.
+  # RollingUpdate would briefly overlap two instances during a deploy.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "gatekeeperai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: beat
+    spec:
+      containers:
+        - name: beat
+          image: {{ include "gatekeeperai.image" (dict "registry" .Values.image.registry "name" "gatekeeperai/backend" "tag" .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - celery
+            - -A
+            - worker.celery_app.celery_app
+            - beat
+            - --loglevel=info
+          env:
+            {{- include "gatekeeperai.backendEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources.beat | nindent 12 }}

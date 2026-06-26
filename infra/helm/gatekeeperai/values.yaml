@@ -1,0 +1,116 @@
+# GatekeeperAI Helm chart — default values
+# Override with values-eks.yaml for EKS production deployments.
+
+image:
+  # For EKS deployments, set registry to your ECR registry URL from
+  # `terraform output ecr_registry_url`
+  registry: ghcr.io/jacobthomasmichael
+  tag: latest
+  pullPolicy: Always
+
+replicas:
+  api: 2
+  frontend: 2
+  worker: 1
+  # IMPORTANT: beat must stay at 1. Multiple replicas will double-fire
+  # SLA checks (celery beat has no built-in leader election).
+  beat: 1
+
+ingress:
+  enabled: true
+  # Hostname to route traffic to — must match your TLS cert.
+  # Example: gatekeeper.yourcompany.com
+  hostname: ""
+  tls: true
+  clusterIssuer: letsencrypt-prod
+  # Ingress class — set to "nginx" if using ingress-nginx controller
+  className: nginx
+
+storage:
+  gitReposSize: 20Gi
+  nginxAppsSize: 1Gi
+  # StorageClass for EFS CSI driver. Set to "efs-sc" for EKS.
+  # For local dev with kind/minikube, use "standard" or "hostpath".
+  storageClass: efs-sc
+
+# ── Secrets ────────────────────────────────────────────────────────────────────
+# IMPORTANT: In production, use External Secrets Operator to sync these from
+# AWS Secrets Manager instead of setting them directly here. Setting them as
+# Helm values causes them to be stored in the Helm release secret in plain text.
+#
+# Example ESO SecretStore pointing at AWS Secrets Manager:
+#   https://external-secrets.io/latest/provider/aws-secrets-manager/
+secrets:
+  secretKey: ""
+  secretEncryptionKey: ""
+  anthropicApiKey: ""
+  # Full SQLAlchemy async URL, e.g.:
+  #   postgresql+asyncpg://gatekeeper:<password>@<rds-endpoint>:5432/gatekeeperai
+  databaseUrl: ""
+  # Full Redis URL, e.g.: redis://<elasticache-endpoint>:6379/0
+  redisUrl: ""
+
+worker:
+  # IAM role ARN for IRSA — set from `terraform output worker_irsa_role_arn`
+  irsaRoleArn: ""
+
+git:
+  # SSH public keys for git push access, one per line.
+  # Mounted into the git-service pod as /home/git/.ssh/authorized_keys.
+  authorizedKeys: ""
+
+env:
+  # Full public URL of the GatekeeperAI instance, e.g. https://gatekeeper.yourcompany.com
+  appBaseUrl: ""
+  environment: production
+  # Secret shared between the git post-receive hook and the API
+  hookSecret: ""
+  # Hostname shown to developers in the dashboard git clone URLs
+  gitSshHost: ""
+  gitSshPort: "2222"
+  # Internal service URL used by the git post-receive hook callback
+  hookCallbackUrl: "http://gatekeeperai-api:8000"
+
+resources:
+  api:
+    requests:
+      cpu: 256m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  worker:
+    requests:
+      cpu: 256m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  beat:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  frontend:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  git:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  nginxApps:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

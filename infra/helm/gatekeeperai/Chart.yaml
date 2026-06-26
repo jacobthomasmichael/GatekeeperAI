@@ -1,0 +1,14 @@
+apiVersion: v2
+name: gatekeeperai
+description: GatekeeperAI — governed AI app deployment platform
+type: application
+version: 0.1.0
+appVersion: "latest"
+
+keywords:
+  - ai
+  - governance
+  - deployment
+
+maintainers:
+  - name: GatekeeperAI

@@ -1,0 +1,45 @@
+# Shared volume for bare git repositories.
+# Replaces the docker-compose `git_repos` named volume.
+# Mounted by: git-service (writes), api (reads for zip push), worker (builds from).
+#
+# Before deploying, set the volumeHandle to your EFS filesystem ID:
+#   terraform -chdir=infra/terraform output efs_id
+# Then patch this PV or set it via a Helm value override.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-git-repos-pv
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.storage.gitReposSize }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ .Values.storage.storageClass }}
+  csi:
+    driver: efs.csi.aws.com
+    # Replace with the EFS filesystem ID from `terraform output efs_id`
+    # Format: fs-XXXXXXXXXXXXXXXXX
+    volumeHandle: "fs-REPLACE_WITH_EFS_ID"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-git-repos
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+  annotations:
+    # EFS filesystem ID — set from `terraform output efs_id`
+    gatekeeperai.io/efs-filesystem-id: "fs-REPLACE_WITH_EFS_ID"
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: {{ .Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.gitReposSize }}
+  # Bind directly to the PV above
+  volumeName: {{ include "gatekeeperai.fullname" . }}-git-repos-pv

@@ -1,0 +1,21 @@
+# Role granting the worker ServiceAccount the Kubernetes permissions it will
+# need in Phase 3 (creating per-app Deployments, Services, Secrets, Ingresses).
+# Wired up now so the binding exists when the worker code lands — no Kubernetes
+# API calls are made by the Phase 1 worker.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "secrets", "configmaps", "pods", "pods/log"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

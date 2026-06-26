@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-worker
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.replicas.worker }}
+  selector:
+    matchLabels:
+      {{- include "gatekeeperai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "gatekeeperai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      # IRSA ServiceAccount — binds to the IAM role via projected token
+      serviceAccountName: {{ include "gatekeeperai.fullname" . }}-worker
+      containers:
+        - name: worker
+          image: {{ include "gatekeeperai.image" (dict "registry" .Values.image.registry "name" "gatekeeperai/backend" "tag" .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - celery
+            - -A
+            - worker.celery_app.celery_app
+            - worker
+            - --loglevel=info
+            - --concurrency=2
+          env:
+            {{- include "gatekeeperai.backendEnv" . | nindent 12 }}
+          volumeMounts:
+            - name: git-repos
+              mountPath: /git-repos
+            - name: nginx-apps
+              mountPath: /nginx-apps
+            # Phase 1 stopgap: mount the host Docker socket so the worker can
+            # call container_service.py (build/run/stop app containers).
+            # In Phase 3 this will be replaced with Kubernetes API calls that
+            # create per-app Deployments instead of raw Docker containers.
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+          resources:
+            {{- toYaml .Values.resources.worker | nindent 12 }}
+      volumes:
+        - name: git-repos
+          persistentVolumeClaim:
+            claimName: {{ include "gatekeeperai.fullname" . }}-git-repos
+        - name: nginx-apps
+          persistentVolumeClaim:
+            claimName: {{ include "gatekeeperai.fullname" . }}-nginx-apps
+        # Phase 1 Docker socket mount — see comment above.
+        # Security note: hostPath socket mounts give the pod root-equivalent
+        # access to the node. Restrict the worker to dedicated nodes with a
+        # taint/toleration if this posture is a concern.
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
