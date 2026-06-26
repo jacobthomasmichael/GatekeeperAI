@@ -12,6 +12,7 @@ import os
 import boto3
 from kubernetes import client, config as k8s_config
 from kubernetes.client.exceptions import ApiException
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,6 @@ def build_and_push(
     Returns the full ECR image URI including tag.
     ecr_registry: e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com"
     """
-    from app.config import settings
-
     image_tag = f"{commit_sha[:12]}" if commit_sha else str(uuid.uuid4())[:12]
     image_uri = f"{ecr_registry}/gatekeeperai-apps/{safe_name}:{image_tag}"
     s3_key = f"builds/{safe_name}/{image_tag}.tar.gz"

@@ -37,3 +37,10 @@ spec:
             {{- include "gatekeeperai.backendEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.resources.beat | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL

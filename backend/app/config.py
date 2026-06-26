@@ -1,3 +1,4 @@
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,6 +38,29 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     BUILD_CONTEXT_BUCKET: str = ""  # Required when DEPLOY_BACKEND=kubernetes; S3 bucket for Kaniko build contexts
     ECR_REGISTRY: str = ""  # Required when DEPLOY_BACKEND=kubernetes; e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com"
+
+    @field_validator("DEPLOY_BACKEND")
+    @classmethod
+    def validate_deploy_backend(cls, v: str) -> str:
+        if v not in ("docker", "kubernetes"):
+            raise ValueError("DEPLOY_BACKEND must be 'docker' or 'kubernetes'")
+        return v
+
+    @model_validator(mode="after")
+    def validate_kubernetes_config(self) -> "Settings":
+        if self.DEPLOY_BACKEND == "kubernetes":
+            missing = [
+                name for name, val in [
+                    ("BUILD_CONTEXT_BUCKET", self.BUILD_CONTEXT_BUCKET),
+                    ("ECR_REGISTRY", self.ECR_REGISTRY),
+                ]
+                if not val
+            ]
+            if missing:
+                raise ValueError(
+                    f"These env vars are required when DEPLOY_BACKEND=kubernetes: {', '.join(missing)}"
+                )
+        return self
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30

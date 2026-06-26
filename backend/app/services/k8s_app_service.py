@@ -4,6 +4,7 @@ Only used when DEPLOY_BACKEND=kubernetes.
 """
 import base64
 import logging
+from datetime import datetime
 from kubernetes import client, config as k8s_config
 from kubernetes.client.exceptions import ApiException
 
@@ -156,7 +157,11 @@ def get_app_logs(safe_name: str, tail_lines: int = 200) -> str:
         return "No running pods found."
 
     # Use the most recently started pod
-    pod = sorted(pods.items, key=lambda p: p.metadata.creation_timestamp or "", reverse=True)[0]
+    pod = sorted(
+        pods.items,
+        key=lambda p: p.metadata.creation_timestamp or datetime.min,
+        reverse=True,
+    )[0]
     try:
         return core_v1.read_namespaced_pod_log(
             pod.metadata.name,

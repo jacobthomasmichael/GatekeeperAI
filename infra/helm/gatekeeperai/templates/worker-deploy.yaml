@@ -44,6 +44,13 @@ spec:
               mountPath: /nginx-apps
           resources:
             {{- toYaml .Values.resources.worker | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
       volumes:
         - name: git-repos
           persistentVolumeClaim:

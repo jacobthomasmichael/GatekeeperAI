@@ -40,7 +40,6 @@ def write_app_ingress(
 
     service_name = f"gk-app-{safe_name}"
     ingress_name = f"gk-app-{safe_name}"
-    path_prefix = f"/apps/{safe_name}/"
 
     # Parse hostname from app_base_url (strip scheme)
     from urllib.parse import urlparse

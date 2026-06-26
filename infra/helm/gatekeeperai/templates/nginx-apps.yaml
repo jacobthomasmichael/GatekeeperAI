@@ -39,6 +39,13 @@ spec:
               readOnly: true
           resources:
             {{- toYaml .Values.resources.nginxApps | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           livenessProbe:
             httpGet:
               path: /nginx-health
@@ -77,6 +84,13 @@ spec:
             limits:
               cpu: 50m
               memory: 32Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
 
       volumes:
         - name: nginx-config

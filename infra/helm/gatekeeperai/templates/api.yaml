@@ -51,6 +51,13 @@ spec:
               mountPath: /nginx-apps
           resources:
             {{- toYaml .Values.resources.api | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           livenessProbe:
             httpGet:
               path: /health
