@@ -22,7 +22,7 @@ spec:
     # For per-directory isolation, use the access point format:
     #   fs-XXXXXXXXXXXXXXXXX::fsap-XXXXXXXXXXXXXXXXX
     # Access point ID from: `terraform output efs_nginx_apps_access_point_id`
-    volumeHandle: "fs-REPLACE_WITH_EFS_ID"
+    volumeHandle: "{{ required "storage.efsFileSystemId is required for EKS (get it from: terraform output efs_id)" .Values.storage.efsFileSystemId }}"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -31,7 +31,7 @@ metadata:
   labels:
     {{- include "gatekeeperai.labels" . | nindent 4 }}
   annotations:
-    gatekeeperai.io/efs-filesystem-id: "fs-REPLACE_WITH_EFS_ID"
+    gatekeeperai.io/efs-filesystem-id: "{{ required "storage.efsFileSystemId is required for EKS (get it from: terraform output efs_id)" .Values.storage.efsFileSystemId }}"
 spec:
   accessModes:
     - ReadWriteMany

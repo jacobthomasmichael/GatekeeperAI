@@ -2,9 +2,9 @@
 # Replaces the docker-compose `git_repos` named volume.
 # Mounted by: git-service (writes), api (reads for zip push), worker (builds from).
 #
-# Before deploying, set the volumeHandle to your EFS filesystem ID:
-#   terraform -chdir=infra/terraform output efs_id
-# Then patch this PV or set it via a Helm value override.
+# EFS filesystem ID is set via values.storage.efsFileSystemId.
+# Get the value from: terraform -chdir=infra/terraform output efs_id
+# Pass at install time: --set storage.efsFileSystemId=fs-xxxxx
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -23,7 +23,7 @@ spec:
     driver: efs.csi.aws.com
     # Replace with the EFS filesystem ID from `terraform output efs_id`
     # Format: fs-XXXXXXXXXXXXXXXXX
-    volumeHandle: "fs-REPLACE_WITH_EFS_ID"
+    volumeHandle: "{{ required "storage.efsFileSystemId is required for EKS (get it from: terraform output efs_id)" .Values.storage.efsFileSystemId }}"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -33,7 +33,7 @@ metadata:
     {{- include "gatekeeperai.labels" . | nindent 4 }}
   annotations:
     # EFS filesystem ID — set from `terraform output efs_id`
-    gatekeeperai.io/efs-filesystem-id: "fs-REPLACE_WITH_EFS_ID"
+    gatekeeperai.io/efs-filesystem-id: "{{ required "storage.efsFileSystemId is required for EKS (get it from: terraform output efs_id)" .Values.storage.efsFileSystemId }}"
 spec:
   accessModes:
     - ReadWriteMany
