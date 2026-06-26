@@ -103,6 +103,11 @@ keda:
     maxReplicas: 5
     redisAddress: ""  # e.g. "your-elasticache-endpoint:6379" from terraform output redis_endpoint
     listLength: "5"   # scale up when more than 5 jobs are queued
+    # ElastiCache AUTH password support. Set redisPasswordSecretName to the name
+    # of a K8s Secret in this namespace that contains a "password" key with the
+    # Redis AUTH token. Leave blank to connect without auth (dev/local only).
+    # Example: kubectl create secret generic redis-auth --from-literal=password=<token>
+    redisPasswordSecretName: ""
 
 networkPolicy:
   enabled: true

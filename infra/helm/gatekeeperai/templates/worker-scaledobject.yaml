@@ -1,4 +1,22 @@
 {{- if .Values.keda.enabled }}
+{{- if .Values.keda.worker.redisPasswordSecretName }}
+---
+# TriggerAuthentication: supplies Redis AUTH token from a K8s Secret.
+# Required for ElastiCache deployments that use transit encryption + AUTH.
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ include "gatekeeperai.fullname" . }}-redis-auth
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gatekeeperai.labels" . | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: {{ .Values.keda.worker.redisPasswordSecretName }}
+      key: password
+{{- end }}
+---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -16,6 +34,10 @@ spec:
   cooldownPeriod: 60
   triggers:
   - type: redis
+    {{- if .Values.keda.worker.redisPasswordSecretName }}
+    authenticationRef:
+      name: {{ include "gatekeeperai.fullname" . }}-redis-auth
+    {{- end }}
     metadata:
       address: {{ .Values.keda.worker.redisAddress }}
       listName: celery

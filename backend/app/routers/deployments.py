@@ -92,7 +92,9 @@ async def stop_deployment(
         safe_name = re.sub(r"[^a-z0-9_-]", "-", submission.name.lower())
         if settings.DEPLOY_BACKEND == "kubernetes":
             from app.services.k8s_ingress_service import remove_app_ingress
+            from app.services.k8s_app_service import stop_app as k8s_stop_app
             remove_app_ingress(safe_name)
+            k8s_stop_app(safe_name)
         else:
             from app.services import nginx_service
             nginx_service.remove_app_config(safe_name)

@@ -17,6 +17,9 @@ spec:
         {{- include "gatekeeperai.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: nginx-apps
     spec:
+      # Required so the nginx-reloader sidecar can send SIGHUP to the nginx
+      # master process in the nginx container via `nginx -s reload`.
+      shareProcessNamespace: true
       containers:
         - name: nginx
           image: nginx:alpine
