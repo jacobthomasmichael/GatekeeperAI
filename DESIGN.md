@@ -86,3 +86,21 @@ The platform supports both zip upload and git push. Git push goes through a sepa
 **App type detection.** The current heuristic reads `requirements.txt` and `package.json` to classify apps (Streamlit, Gradio, Flask, Node, static). It's surprisingly effective but breaks on non-standard layouts. A more robust approach would scan all files for entry point patterns rather than relying on one or two indicator files.
 
 **The scan result schema.** Findings are stored as JSONB — flexible but untyped. As the scanner count grows and findings become more structured, a proper findings table with a discriminated type column would make querying and aggregating results much cleaner.
+
+---
+
+## Kubernetes / EKS deployment model
+
+The single-host Docker model described above ("Tradeoffs I made knowingly") was always a known ceiling. The EKS path is implemented and ships on the `feature/eks-kubernetes` branch. The key design decisions:
+
+**Dual-mode via a single env var.** `DEPLOY_BACKEND=docker` (the default) preserves every existing behaviour exactly — `container_service.py` and `nginx_service.py` are untouched. `DEPLOY_BACKEND=kubernetes` activates the three new services: `k8s_build_service.py` (Kaniko → ECR), `k8s_app_service.py` (K8s Deployment + Secret lifecycle), and `k8s_ingress_service.py` (dynamic Ingress resources). Compose installs never set the flag, so they're unaffected by any K8s code.
+
+**Kaniko over Docker-in-Docker.** Building images inside a Kubernetes pod without a daemon is the standard problem. Kaniko runs as a normal pod, reads the build context from S3 (uploaded by the worker before the Job is created), and pushes directly to ECR using the pod's IRSA credentials. No Docker socket, no privileged containers. The tradeoff is build speed — Kaniko is slower than a warmed Docker daemon. The `--cache=true` flag mitigates this for apps that rebuild often.
+
+**Ingress resources replace config file writes.** The Docker path writes `.conf` files to a shared nginx directory; a watcher sidecar triggers `nginx -s reload`. The K8s path creates a Kubernetes `Ingress` resource per app (with `nginx.ingress.kubernetes.io/auth-url` for auth gating), which nginx-ingress picks up dynamically. This is cleaner operationally — no shared filesystem, no reload races — but it couples the deploy path to the nginx-ingress controller. Traefik or Caddy would work equally well here.
+
+**IRSA over static credentials.** The worker pod's ServiceAccount is annotated with an IAM role ARN (IRSA). It gets temporary credentials automatically — no `AWS_ACCESS_KEY_ID` anywhere in the stack. The role is scoped to the minimum needed: ECR push/pull for `gatekeeperai-apps/*`, S3 put/get on the build-contexts bucket, and Kubernetes API access to the `gatekeeperai-apps` and `gatekeeperai-builds` namespaces.
+
+**App isolation via NetworkPolicy.** Pods in `gatekeeperai-apps` are denied all RFC-1918 egress — they can reach the internet but not the VPC-internal platform or each other. This is the Kubernetes equivalent of the egress scanner's `allowed_egress_urls` finding: the scanner flags suspicious URLs, the NetworkPolicy enforces the boundary at runtime. The two together give defence-in-depth.
+
+**What's still on the roadmap.** The NetworkPolicy egress rules are currently all-or-nothing for internet access. The right next step is per-app egress policies derived from the egress scanner's findings — if the scanner approves only `api.openai.com`, the NetworkPolicy should only allow that CIDR. This requires either DNS-based policies (Cilium does this well) or a service mesh egress proxy.

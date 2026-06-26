@@ -29,6 +29,7 @@ GatekeeperAI is an on-premises platform that lets enterprise teams safely adopt 
 - **Admin panel** — user management, SSO configuration, audit log viewer, platform-wide metrics
 - **Setup wizard** — first-run wizard configures the instance with no config-file editing required
 - **Secure by default** — JWT with refresh token rotation, rate limiting on all endpoints, security headers (CSP, HSTS, etc.), non-root containers
+- **Dual deployment targets** — Docker Compose for single-host on-premises installs; Kubernetes/EKS with Helm and Terraform for enterprise scale (HPA, KEDA autoscaling, network isolation, PodDisruptionBudgets)
 - **OpenTelemetry instrumentation** — distributed tracing across FastAPI, SQLAlchemy, Celery, and Redis; ships to any OTLP-compatible backend (Grafana Tempo, Honeycomb, Datadog, Jaeger) via a single env var
 
 ---
@@ -39,7 +40,8 @@ GatekeeperAI is an on-premises platform that lets enterprise teams safely adopt 
 |---|---|
 | Backend API | FastAPI + SQLAlchemy 2.0 async + PostgreSQL 16 |
 | Task queue | Celery + Redis |
-| Container runtime | Docker SDK (Python) |
+| Container runtime | Docker SDK (Python) · Kubernetes (EKS) + Helm + Terraform |
+| Deployment | Docker Compose (single-host) · Kubernetes/EKS (Helm chart + Terraform) |
 | LLM | Anthropic Claude API |
 | Frontend | Next.js 16 (App Router) + Tailwind CSS |
 | Auth | JWT (access + refresh) + WebAuthn passkeys + OIDC/SSO (authlib) |
@@ -68,15 +70,20 @@ Pre-built images are pulled from GitHub Container Registry — no compilation re
 docker compose -f infra/docker-compose.yml up --build
 ```
 
+**For Kubernetes/EKS deployment**, see the [EKS setup guide](./INSTALL.md) in INSTALL.md — it covers Terraform provisioning, ECR image push, and Helm chart installation.
+
 ---
 
 ## Project structure
 
 ```
-backend/        FastAPI application, scanners, Celery workers, Alembic migrations
-frontend/       Next.js web application
-infra/          Docker Compose configuration
-worker/         Celery task definitions (deploy, SLA checks)
+backend/            FastAPI application, scanners, Celery workers, Alembic migrations
+frontend/           Next.js web application
+infra/              Docker Compose, nginx configs, and Kubernetes infrastructure
+  docker-compose.yml
+  helm/gatekeeperai/ Helm chart for EKS deployment (api, worker, beat, frontend, git-service)
+  terraform/         EKS cluster, RDS, ElastiCache, ECR, EFS, VPC, IAM/IRSA
+worker/             Celery task definitions (deploy, SLA checks)
 ```
 
 ---
