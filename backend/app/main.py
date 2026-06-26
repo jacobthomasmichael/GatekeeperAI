@@ -1,4 +1,6 @@
 import logging
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,10 +31,31 @@ def _get_client_ip(request: Request) -> str:
 
 limiter = Limiter(key_func=_get_client_ip)
 
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    issues = []
+    if len(settings.SECRET_KEY) < 32:
+        issues.append("SECRET_KEY is too short (must be ≥ 32 chars)")
+    if settings.SECRET_KEY in ("changeme", "secret", "dev", "development", ""):
+        issues.append("SECRET_KEY looks like a default/placeholder value")
+    if len(settings.SECRET_ENCRYPTION_KEY) < 32:
+        issues.append("SECRET_ENCRYPTION_KEY is too short (must be ≥ 32 chars)")
+    if settings.is_production and settings.ENVIRONMENT == "production":
+        if not settings.HOOK_SECRET:
+            issues.append("HOOK_SECRET is not set — git hook endpoints are unprotected")
+        if not settings.APP_BASE_URL.startswith("https://"):
+            issues.append("APP_BASE_URL should use https:// in production")
+    for issue in issues:
+        _logger.warning("SECURITY: %s", issue)
+    yield
+
+
 app = FastAPI(
     title="GatekeeperAI",
     description="Secure enterprise app runtime",
     version="0.1.0",
+    lifespan=_lifespan,
 )
 
 app.state.limiter = limiter
@@ -53,24 +76,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(AuditMiddleware)
-
-
-@app.on_event("startup")
-async def _validate_config() -> None:
-    issues = []
-    if len(settings.SECRET_KEY) < 32:
-        issues.append("SECRET_KEY is too short (must be ≥ 32 chars)")
-    if settings.SECRET_KEY in ("changeme", "secret", "dev", "development", ""):
-        issues.append("SECRET_KEY looks like a default/placeholder value")
-    if len(settings.SECRET_ENCRYPTION_KEY) < 32:
-        issues.append("SECRET_ENCRYPTION_KEY is too short (must be ≥ 32 chars)")
-    if settings.is_production and settings.ENVIRONMENT == "production":
-        if not settings.HOOK_SECRET:
-            issues.append("HOOK_SECRET is not set — git hook endpoints are unprotected")
-        if not settings.APP_BASE_URL.startswith("https://"):
-            issues.append("APP_BASE_URL should use https:// in production")
-    for issue in issues:
-        _logger.warning("SECURITY: %s", issue)
 
 
 API_PREFIX = "/api/v1"

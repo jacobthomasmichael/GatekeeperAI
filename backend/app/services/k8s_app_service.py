@@ -37,7 +37,8 @@ def deploy_app(
     core_v1 = client.CoreV1Api()
 
     deployment_name = f"gk-app-{safe_name}"
-    secret_name = f"gk-app-{safe_name}-secrets"
+    # K8s names max 63 chars: "gk-app-" (7) + safe_name + "-secrets" (8) ≤ 63
+    secret_name = f"gk-app-{safe_name[:48]}-secrets"
 
     # --- K8s Secret for app env vars ---
     secret_data = {
@@ -196,10 +197,11 @@ def delete_app(safe_name: str) -> None:
     apps_v1 = client.AppsV1Api()
     core_v1 = client.CoreV1Api()
     deployment_name = f"gk-app-{safe_name}"
+    secret_name = f"gk-app-{safe_name[:48]}-secrets"
 
     for fn, name in [
         (apps_v1.delete_namespaced_deployment, deployment_name),
-        (core_v1.delete_namespaced_secret, f"{deployment_name}-secrets"),
+        (core_v1.delete_namespaced_secret, secret_name),
     ]:
         try:
             fn(name, APPS_NAMESPACE)
