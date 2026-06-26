@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     SMTP_USE_TLS: bool = True
     APPROVER_EMAILS: str = ""  # comma-separated fallback list
 
+    DEPLOY_BACKEND: str = "docker"  # "docker" or "kubernetes"
+
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 

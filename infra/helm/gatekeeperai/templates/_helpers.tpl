@@ -106,4 +106,6 @@ Common environment variables injected into every backend container
   value: {{ .Values.env.gitSshPort | quote }}
 - name: HOOK_SECRET
   value: {{ .Values.env.hookSecret | quote }}
+- name: DEPLOY_BACKEND
+  value: {{ .Values.env.deployBackend | quote }}
 {{- end }}

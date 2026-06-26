@@ -70,6 +70,7 @@ env:
   gitSshPort: "2222"
   # Internal service URL used by the git post-receive hook callback
   hookCallbackUrl: "http://gatekeeperai-api:8000"
+  deployBackend: "kubernetes"  # "docker" or "kubernetes"; docker preserves compose behaviour
 
 resources:
   api:

@@ -155,9 +155,19 @@ async def _run_deploy(approval_id: str, SessionLocal) -> None:
                 return
 
             try:
-                public_url = nginx_service.write_app_config(safe_name, external_port, submission.visibility)
+                if settings.DEPLOY_BACKEND == "kubernetes":
+                    from app.services.k8s_ingress_service import write_app_ingress
+                    write_app_ingress(
+                        safe_name=safe_name,
+                        internal_port=internal_port,
+                        app_base_url=settings.APP_BASE_URL,
+                        visibility=submission.visibility,
+                    )
+                else:
+                    nginx_service.write_app_config(safe_name, external_port, submission.visibility)
+                public_url = f"{settings.APP_BASE_URL}/apps/{safe_name}/"
             except Exception as e:
-                logger.warning("nginx config write failed (app will still be accessible via port): %s", e)
+                logger.warning("routing config write failed (app will still be accessible via port): %s", e)
                 public_url = f"{settings.APP_BASE_URL}/apps/{safe_name}/"
 
             deployment.container_id = container.id

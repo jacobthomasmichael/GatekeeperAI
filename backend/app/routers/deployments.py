@@ -88,9 +88,14 @@ async def stop_deployment(
     submission = await db.get(AppSubmission, deployment.submission_id)
     if submission:
         import re
-        from app.services import nginx_service
+        from app.config import settings
         safe_name = re.sub(r"[^a-z0-9_-]", "-", submission.name.lower())
-        nginx_service.remove_app_config(safe_name)
+        if settings.DEPLOY_BACKEND == "kubernetes":
+            from app.services.k8s_ingress_service import remove_app_ingress
+            remove_app_ingress(safe_name)
+        else:
+            from app.services import nginx_service
+            nginx_service.remove_app_config(safe_name)
         submission.status = "stopped"
 
     deployment.status = "stopped"
