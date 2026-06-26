@@ -2,6 +2,7 @@ import pytest
 import pytest_asyncio
 from unittest.mock import patch
 from sqlalchemy import delete, select
+from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.app_submission import AppSubmission
 from app.models.scan import Scan, ScanResult
@@ -47,6 +48,7 @@ async def wipe_admins(db):
             await db.execute(delete(Deployment).where(Deployment.submission_id.in_(sub_ids)))
             await db.execute(delete(AppSubmission).where(AppSubmission.submitter_id.in_(admin_ids)))
 
+    await db.execute(delete(AuditLog).where(AuditLog.actor_id.in_(admin_ids)))
     await db.execute(delete(User).where(User.role == "admin"))
     await db.commit()
     yield

@@ -61,6 +61,14 @@ def start_container(
         mem_limit=_DEFAULT_MEMORY,
         nano_cpus=int(_DEFAULT_CPU * 1e9),
         restart_policy={"Name": "unless-stopped"},
+        # Drop all Linux capabilities — submitted apps get no elevated privileges.
+        cap_drop=["ALL"],
+        # Prevent setuid/setgid binaries from re-acquiring privileges at runtime.
+        security_opt=["no-new-privileges:true"],
+        # Read-only root filesystem; /tmp is writable via tmpfs (covers HOME=/tmp,
+        # Streamlit cache, Gradio temp files, etc.).
+        read_only=True,
+        tmpfs={"/tmp": "size=128m,mode=1777"},
         labels={
             "managed-by": "gatekeeperai",
             "allowed-egress": ",".join(allowed_egress_urls),

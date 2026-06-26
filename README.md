@@ -2,7 +2,9 @@
 
 **Website:** [gatekeeperai.io](https://www.gatekeeperai.io) · **Support:** [jacob@gatekeeperai.io](mailto:jacob@gatekeeperai.io)
 
-GatekeeperAI is an on-premises platform that lets enterprise teams safely adopt third-party and internal AI applications. Every app goes through automated security scanning, human approval, and sandboxed container deployment before any user can access it.
+> **Status: v0.2 — active development.** The full lifecycle (scan → approve → deploy → access control) is implemented and working. The platform is suitable for internal pilots and teams that want to evaluate the approach. If you find gaps or rough edges, [open an issue](https://github.com/jacobthomasmichael/GatekeeperAI/issues/new) — that feedback directly shapes what gets hardened next.
+
+GatekeeperAI is an on-premises platform that lets teams safely adopt third-party and internal AI applications. Every app goes through automated security scanning, human approval, and sandboxed container deployment before any user can access it.
 
 ---
 
@@ -18,7 +20,7 @@ GatekeeperAI is an on-premises platform that lets enterprise teams safely adopt 
 
 ## Key features
 
-- **Automated multi-scanner pipeline** — secrets, CVEs, egress rules, PII, and LLM code review run in parallel on every push
+- **Automated multi-scanner pipeline** — secrets detection, CVE audit, egress analysis, PII check, and LLM code review run concurrently on every push
 - **Risk tiering** — apps are automatically scored and assigned a risk tier (low / medium / high / critical) that determines review urgency
 - **SLA enforcement** — overdue approvals are flagged and escalators are notified via email
 - **Encrypted secret injection** — per-app secrets are AES-256 encrypted at rest and injected at container startup
@@ -28,8 +30,9 @@ GatekeeperAI is an on-premises platform that lets enterprise teams safely adopt 
 - **Audit log** — every action (approval, deployment, secret change) is recorded with actor, IP, and timestamp
 - **Admin panel** — user management, SSO configuration, audit log viewer, platform-wide metrics
 - **Setup wizard** — first-run wizard configures the instance with no config-file editing required
-- **Secure by default** — JWT with refresh token rotation, rate limiting on all endpoints, security headers (CSP, HSTS, etc.), non-root containers
-- **Dual deployment targets** — Docker Compose for single-host on-premises installs; Kubernetes/EKS with Helm and Terraform for enterprise scale (HPA, KEDA autoscaling, network isolation, PodDisruptionBudgets)
+- **Container security controls** — deployed apps run as non-root, with all Linux capabilities dropped, `no-new-privileges` enforced, and a read-only root filesystem (writable `/tmp` via tmpfs); CPU and memory limits applied at runtime
+- **Platform security** — JWT with refresh token rotation, rate limiting on all endpoints, security headers (CSP, HSTS, X-Frame-Options), AES-256 encrypted secrets at rest
+- **Dual deployment targets** — Docker Compose for single-host on-premises installs; Kubernetes/EKS with Helm and Terraform for larger deployments (HPA, KEDA autoscaling, NetworkPolicy, PodDisruptionBudgets)
 - **OpenTelemetry instrumentation** — distributed tracing across FastAPI, SQLAlchemy, Celery, and Redis; ships to any OTLP-compatible backend (Grafana Tempo, Honeycomb, Datadog, Jaeger) via a single env var
 
 ---
@@ -99,6 +102,29 @@ worker/             Celery task definitions (deploy, SLA checks)
 New users are created by an admin, or provisioned automatically on first SSO login when an OIDC provider is configured. There is no public self-registration.
 
 When SSO is enabled, IdP groups are refreshed on every login and can be mapped to roles in the Admin → SSO tab. Local admin accounts (created during setup with a password) are never demoted by SSO role mappings — they keep their role regardless of what the IdP returns.
+
+---
+
+## Security model
+
+GatekeeperAI deploys arbitrary submitted code — that is its purpose — so the security model is worth being explicit about.
+
+**What is enforced today:**
+- Deployed containers run as a non-root system user (`appuser` / `node`)
+- All Linux capabilities dropped; `no-new-privileges` set; read-only root filesystem
+- CPU (0.5 cores) and memory (512 MB) hard limits per app
+- Per-app `auth_request` gating via nginx — unauthenticated requests never reach the app process
+- Platform API: JWT auth, rate limiting, CSP/HSTS headers, AES-256 encrypted secrets at rest
+- Kubernetes mode adds: NetworkPolicy blocking RFC-1918 egress, ResourceQuota on the app namespace, non-root + drop-ALL securityContext on all platform pods
+
+**What is not enforced today (known gaps):**
+- No syscall filtering (seccomp) or mandatory access control (AppArmor) on deployed containers
+- No egress deny-by-default for Docker mode — apps can reach the internet; the egress scanner flags URLs but does not block them at runtime
+- No post-build image scanning or SBOM generation
+- No signed build provenance (Sigstore/cosign)
+- The generated Dockerfiles install submitted `requirements.txt` / `package.json` without a pinned lockfile — supply-chain risk sits with the submitter
+
+These are tracked as known gaps for future hardening. The platform is appropriate for internal tooling and pilots where submitters are trusted employees; it is not a substitute for a full container security platform (Falco, OPA Gatekeeper, etc.) in a zero-trust environment.
 
 ---
 
