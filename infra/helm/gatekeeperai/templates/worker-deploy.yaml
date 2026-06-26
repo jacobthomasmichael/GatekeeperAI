@@ -1,28 +1,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "gatekeeperai.fullname" . }}-worker
+  name: {{ include "gatekeeperai.fullname" . }}-worker-deploy
   labels:
     {{- include "gatekeeperai.labels" . | nindent 4 }}
-    app.kubernetes.io/component: worker
+    app.kubernetes.io/component: worker-deploy
 spec:
-  {{- if not .Values.keda.enabled }}
-  replicas: {{ .Values.replicas.worker }}
-  {{- end }}
+  replicas: {{ .Values.replicas.workerDeploy }}
   selector:
     matchLabels:
       {{- include "gatekeeperai.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: worker
+      app.kubernetes.io/component: worker-deploy
   template:
     metadata:
       labels:
         {{- include "gatekeeperai.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: worker
+        app.kubernetes.io/component: worker-deploy
     spec:
-      # IRSA ServiceAccount — binds to the IAM role via projected token
+      # IRSA ServiceAccount — same role as the scan worker (needs ECR + S3 + EKS access)
       serviceAccountName: {{ include "gatekeeperai.fullname" . }}-worker
       containers:
-        - name: worker
+        - name: worker-deploy
           image: {{ include "gatekeeperai.image" (dict "registry" .Values.image.registry "name" "gatekeeperai/backend" "tag" .Values.image.tag) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
@@ -31,8 +29,8 @@ spec:
             - worker.celery_app.celery_app
             - worker
             - --loglevel=info
-            - --queues=scans,celery
-            - --concurrency=4
+            - --queues=deploys
+            - --concurrency=2
           env:
             {{- include "gatekeeperai.backendEnv" . | nindent 12 }}
             - name: BUILD_CONTEXT_BUCKET
@@ -44,7 +42,6 @@ spec:
               mountPath: /git-repos
             - name: nginx-apps
               mountPath: /nginx-apps
-            # Docker socket removed in Phase 3 — worker uses Kaniko Jobs and K8s API
           resources:
             {{- toYaml .Values.resources.worker | nindent 12 }}
       volumes:

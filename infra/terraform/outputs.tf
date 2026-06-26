@@ -79,3 +79,8 @@ output "build_context_bucket" {
   description = "S3 bucket for Kaniko build contexts — set as aws.buildContextBucket in values-eks.yaml"
   value       = aws_s3_bucket.build_contexts.bucket
 }
+
+output "apps_ecr_repository_url" {
+  description = "ECR repository URL for user-deployed app images (built by Kaniko)"
+  value       = aws_ecr_repository.apps.repository_url
+}

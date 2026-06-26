@@ -12,6 +12,7 @@ replicas:
   api: 2
   frontend: 2
   worker: 1
+  workerDeploy: 1
   # IMPORTANT: beat must stay at 1. Multiple replicas will double-fire
   # SLA checks (celery beat has no built-in leader election).
   beat: 1
@@ -76,6 +77,32 @@ env:
   # Internal service URL used by the git post-receive hook callback
   hookCallbackUrl: "http://gatekeeperai-api:8000"
   deployBackend: "kubernetes"  # "docker" or "kubernetes"; docker preserves compose behaviour
+
+autoscaling:
+  api:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# KEDA scales the worker Deployment based on Redis queue depth.
+# Requires KEDA to be installed in the cluster first:
+#   helm repo add kedacore https://kedacore.github.io/charts
+#   helm install keda kedacore/keda --namespace keda --create-namespace
+# Set keda.worker.redisAddress from `terraform output redis_endpoint` (append :6379).
+# NOTE: The nginx-cache ConfigMap values (http-snippet, location-snippet) must be applied
+# to the cluster-level nginx-ingress controller ConfigMap separately — see the ConfigMap
+# resource comment in nginx-cache-configmap.yaml for the kubectl patch command.
+keda:
+  enabled: false  # set true after installing KEDA in the cluster
+  worker:
+    minReplicas: 1
+    maxReplicas: 5
+    redisAddress: ""  # e.g. "your-elasticache-endpoint:6379" from terraform output redis_endpoint
+    listLength: "5"   # scale up when more than 5 jobs are queued
+
+networkPolicy:
+  enabled: true
 
 resources:
   api:

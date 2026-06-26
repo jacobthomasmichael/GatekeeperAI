@@ -515,3 +515,29 @@ resource "aws_ecr_lifecycle_policy" "repos" {
     ]
   })
 }
+
+# ── ECR Repository for user-deployed apps ──────────────────────────────────────
+# Separate from the three platform image repos — holds app images built by Kaniko.
+
+resource "aws_ecr_repository" "apps" {
+  name                 = "gatekeeperai-apps"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+  tags                 = local.common_tags
+}
+
+resource "aws_ecr_lifecycle_policy" "apps" {
+  repository = aws_ecr_repository.apps.name
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep last 3 images per app"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 3
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
