@@ -9,9 +9,9 @@ This file gives AI assistants and human contributors a fast orientation to the c
 GatekeeperAI is an on-premises platform for governed deployment of AI apps. The full lifecycle:
 
 1. **Submit** — developer uploads a zip or pushes to the built-in git server
-2. **Scan** — five automated scanners run in parallel (secrets, CVEs, egress, PII, LLM review)
+2. **Scan** — five automated scanners run concurrently (secrets, CVEs, egress, PII, LLM review)
 3. **Review** — an approver reads the scan report and approves or rejects
-4. **Deploy** — approved app is built into a Docker container behind an nginx reverse proxy
+4. **Deploy** — approved app is built into a container and served behind a reverse proxy; Docker Compose or Kubernetes depending on `DEPLOY_BACKEND`
 5. **Access** — users reach the app at a stable URL; GK handles auth, secrets injection, and per-app access control
 
 ---
@@ -22,7 +22,7 @@ GatekeeperAI is an on-premises platform for governed deployment of AI apps. The 
 backend/            FastAPI API + Celery workers + scanners
   app/
     config.py       Pydantic settings (reads .env)
-    main.py         FastAPI app factory — middleware, routers, telemetry init
+    main.py         FastAPI app factory — middleware, routers, lifespan, telemetry init
     telemetry.py    OpenTelemetry setup (FastAPI + SQLAlchemy + Celery + Redis)
     database.py     Async SQLAlchemy engine + session factory
     deps.py         FastAPI dependency injectors (get_db, get_current_user, require_*)
@@ -31,19 +31,23 @@ backend/            FastAPI API + Celery workers + scanners
     routers/        FastAPI route handlers (one file per domain)
     scanners/       Security scanner implementations + Celery scan task
     services/       Thin service layer called by routers and tasks
-                  approval_service.py  — SLA deadline calculation
-                  auth_service.py      — password hashing, JWT encode/decode
-                  container_service.py — Docker SDK wrapper (build, run, stop, health)
-                  dockerfile_service.py — generates Dockerfiles per app type
-                  git_service.py       — zip → bare repo, zip flattening
-                  log_forwarder.py     — async audit log dispatch (daemon thread, never blocks)
-                  nginx_service.py     — writes/removes per-app nginx configs
+                  approval_service.py    — SLA deadline calculation
+                  auth_service.py        — password hashing, JWT encode/decode, SSO group→role mapping
+                  container_service.py   — Docker SDK wrapper (build, run, stop, health)
+                  dockerfile_service.py  — generates hardened Dockerfiles per app type
+                  git_service.py         — zip → bare repo, zip flattening
+                  k8s_app_service.py     — K8s Deployment/Secret lifecycle (DEPLOY_BACKEND=kubernetes)
+                  k8s_build_service.py   — Kaniko build jobs → ECR (DEPLOY_BACKEND=kubernetes)
+                  k8s_ingress_service.py — K8s Ingress + ClusterIP Service per app (DEPLOY_BACKEND=kubernetes)
+                  log_forwarder.py       — async audit log dispatch (daemon thread, never blocks)
+                  nginx_service.py       — writes/removes per-app nginx configs (DEPLOY_BACKEND=docker)
                   notification_service.py — SMTP email for approvers
-                  secrets_service.py   — Fernet encrypt/decrypt per-app secrets
+                  oidc_service.py        — OIDC discovery, PKCE auth flow, token exchange, Redis state
+                  secrets_service.py     — Fernet encrypt/decrypt per-app secrets
     middleware/     AuditMiddleware, SecurityHeadersMiddleware
   worker/
     celery_app.py   Celery app definition + Beat schedule
-    deploy_task.py  Container build + start Celery task
+    deploy_task.py  Container build + start Celery task (branches on DEPLOY_BACKEND)
     sla_task.py     Celery Beat task — flags overdue approvals
   alembic/          DB migrations
   tests/            pytest suite (runs against a real test DB)
@@ -54,12 +58,12 @@ frontend/           Next.js 16 App Router
   AGENTS.md         ⚠ Read this before touching frontend code — documents breaking
                     Next.js API changes that differ from training data
   app/
-    login/          Passkey-first login page
+    login/          Passkey-first login page (also handles SSO redirect + sso_code exchange)
     setup/          First-run wizard
-    dashboard/      IC view — submit apps, track status, manage secrets/access
+    dashboard/      IC view — submit apps, track status, manage secrets/access/groups
     approvals/      Approver queue + scan report viewer
     deployments/    Admin deployment management
-    admin/          User management, audit log, platform metrics
+    admin/          User management, audit log, platform metrics, SSO configuration
     account/        Passkey enrollment and management
   components/       Shared components (Sidebar, AuthGuard, ScanResultCard, etc.)
   lib/
@@ -72,6 +76,8 @@ infra/
   git-service/         Alpine SSH container that receives git pushes
   git-repos/           Bare git repos (created at runtime, not committed)
   authorized_keys      SSH public keys for git push access
+  helm/gatekeeperai/   Helm chart for Kubernetes/EKS deployment
+  terraform/           EKS cluster, RDS, ElastiCache, ECR, EFS, VPC, IAM/IRSA
 
 GKAPP.md            AI assistant context file for users building GK-compatible apps
 INSTALL.md          End-user installation guide (non-technical audience)
@@ -86,12 +92,13 @@ INSTALL.md          End-user installation guide (non-technical audience)
 | Backend API | FastAPI 0.136 + SQLAlchemy 2.0 async | Python 3.11 |
 | Database | PostgreSQL 16 | Port 5433 locally (not 5432 — conflicts with local PG) |
 | Task queue | Celery 5.6 + Redis 7.2 | Broker and result backend both Redis |
-| Container runtime | Docker SDK (Python) | `container_service.py` wraps the SDK |
+| Container runtime (Docker) | Docker SDK (Python) | `container_service.py` wraps the SDK |
+| Container runtime (K8s) | Kubernetes Python client + Kaniko + ECR | Only loaded when `DEPLOY_BACKEND=kubernetes` |
 | LLM | Anthropic Claude API | Used in `llm_scanner.py` for code review |
 | Frontend | Next.js 16 (App Router) + Tailwind CSS v3 | webpack, not Turbopack |
-| Auth | JWT (access + refresh) + WebAuthn passkeys | 60-min access / 30-day refresh; JTI tracked in Redis |
+| Auth | JWT (access + refresh) + WebAuthn passkeys + OIDC/SSO | 60-min access / 30-day refresh; JTI tracked in Redis; SSO via authlib |
 | Observability | OpenTelemetry 1.42 | OTLP HTTP export, no-op when endpoint not set |
-| CI | GitHub Actions | `.github/workflows/publish.yml` builds + pushes to GHCR on every push to main |
+| CI | GitHub Actions | Builds + pushes to GHCR on every push to main; also pushes to ECR when `ECR_REGISTRY` secret is set |
 
 ---
 
@@ -115,6 +122,10 @@ All config lives in `.env` (copy from `.env.example`). Key vars:
 | `GIT_SSH_PORT` | Set by compose | SSH port for git push (default `2222`, not 22) |
 | `HOOK_CALLBACK_URL` | Set by compose | Internal URL the git post-receive hook calls back to (default `http://api:8000`) |
 | `GIT_REPOS_BASE_PATH` | Set by compose | Mount path for bare git repos volume (default `/git-repos`) |
+| `DEPLOY_BACKEND` | No | `docker` (default) or `kubernetes` — switches the deploy/stop/restart path |
+| `AWS_REGION` | K8s only | AWS region for ECR and S3 build contexts |
+| `BUILD_CONTEXT_BUCKET` | K8s only | S3 bucket for Kaniko build contexts (required when `DEPLOY_BACKEND=kubernetes`) |
+| `ECR_REGISTRY` | K8s only | ECR registry URL for app images (required when `DEPLOY_BACKEND=kubernetes`) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No | JWT access token lifetime (default 60) |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | No | JWT refresh token lifetime (default 30) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | OTLP HTTP endpoint; omit to discard traces |
@@ -129,17 +140,22 @@ All config lives in `.env` (copy from `.env.example`). Key vars:
 ## Database models
 
 ```
-users               id, email, username, role (ic/approver/admin), hashed_password, is_active
+users               id, email, username, role (ic/approver/admin), hashed_password, is_active,
+                    sso_subject (nullable, indexed), sso_groups (ARRAY, nullable)
 passkeys            id, user_id→users, credential_id, public_key, sign_count, label
 app_submissions     id, submitter_id→users, name, description, repo_url, status,
-                    risk_tier, detected_type, rejection, allowed_users[], visibility
+                    risk_tier, detected_type, rejection, allowed_users[], allowed_groups[],
+                    visibility
 scans               id, submission_id→app_submissions, commit_sha, status, risk_score,
                     risk_tier, findings (JSONB)
 approvals           id, scan_id→scans, approver_id→users, decision, comment, decided_at, sla_deadline
 deployments         id, submission_id→app_submissions, scan_id→scans, container_id,
                     container_name, image_tag, status, internal_port, external_port,
-                    public_url, env_vars_injected, logs_cache
+                    public_url, env_vars_injected, logs_cache,
+                    k8s_namespace (nullable), k8s_deployment_name (nullable)
 secret_store        id, submission_id→app_submissions, key_name, encrypted_value
+sso_configuration   id, provider_name, discovery_url, client_id, encrypted_client_secret,
+                    group_claim_key, default_role, role_mappings (JSONB), is_enabled
 audit_logs          id, actor_id, action, resource_type, resource_id, ip_address, created_at
 ```
 
@@ -161,7 +177,7 @@ alembic upgrade head
 **Pipeline** (`backend/app/scanners/pipeline.py`):
 1. Checks out the commit into a temp directory
 2. Detects app type (`_detect_app_type`) — reads `requirements.txt` / `package.json` / `index.html`
-3. Runs five scanners in parallel, each publishing SSE events as they go:
+3. Runs five scanners concurrently via `ThreadPoolExecutor` + `asyncio.gather`; each publishes SSE events as it starts and completes:
    - `secrets_scanner.py` — detect-secrets
    - `dependency_scanner.py` — pip-audit / npm audit
    - `egress_scanner.py` — static analysis for outbound URLs
@@ -179,14 +195,25 @@ Scan events stream to the frontend via `GET /scans/{id}/events` (Server-Sent Eve
 
 **Entry point:** `POST /approvals/{id}/decide` with `decision=approved` → enqueues `deploy_approved_app`
 
-**Task** (`backend/worker/deploy_task.py`):
+**Task** (`backend/worker/deploy_task.py`) — branches on `DEPLOY_BACKEND`:
+
+**Docker path** (`DEPLOY_BACKEND=docker`, default):
 1. Clones the approved commit into a build directory
-2. `dockerfile_service.py` generates a Dockerfile based on detected app type
+2. `dockerfile_service.py` generates a hardened Dockerfile (non-root user, `HOME=/tmp`)
 3. `container_service.build_image()` — `docker build`
 4. `secrets_service.py` decrypts per-app secrets → env vars dict
-5. `container_service.start_container()` — `docker run` with resource limits (512 MB RAM, 0.5 CPU)
+5. `container_service.start_container()` — `docker run` with: 512 MB RAM, 0.5 CPU, `cap_drop=ALL`, `no-new-privileges`, `read_only=True`, `/tmp` tmpfs
 6. `nginx_service.py` writes an nginx config for the app's subdirectory and reloads nginx
 7. Health check polls the container; updates deployment status in DB
+
+**Kubernetes path** (`DEPLOY_BACKEND=kubernetes`):
+1. Clones the approved commit into a build directory
+2. `dockerfile_service.py` generates a hardened Dockerfile
+3. `k8s_build_service.build_and_push()` — tars build context → S3 → Kaniko Job → ECR image URI
+4. `secrets_service.py` decrypts per-app secrets → env vars dict
+5. `k8s_app_service.deploy_app()` — creates K8s Secret + Deployment in `gatekeeperai-apps` namespace
+6. `k8s_ingress_service.write_app_ingress()` — creates ClusterIP Service + Ingress with auth-url annotation
+7. Polls pod readiness; updates deployment status in DB with `k8s_namespace` and `k8s_deployment_name`
 
 **App URL pattern:** `https://your-domain.com/apps/{safe-name}/`
 
@@ -203,26 +230,30 @@ Scan events stream to the frontend via `GET /scans/{id}/events` (Server-Sent Eve
 
 Detection reads `requirements.txt` for Python apps and `package.json` for Node. Zip uploads are automatically flattened if the user zipped a folder (strips single-subdirectory nesting and `__MACOSX/`).
 
+All generated Dockerfiles (except `static`) create a non-root system user, `chown /app`, set `ENV HOME=/tmp`, and switch to that user before the entrypoint.
+
 ---
 
 ## Auth model
 
-- **Login:** email + password OR passkey (WebAuthn). Passkey is the default UI flow.
+- **Login:** email + password OR passkey (WebAuthn) OR SSO/OIDC. Passkey is the default UI flow.
+- **SSO/OIDC:** configured by an admin in the Admin → SSO tab. Stored in `sso_configuration` table (one row max). On first SSO login, accounts are auto-provisioned; IdP groups are refreshed on every login and mapped to platform roles via `role_mappings`. Local admin accounts (with `hashed_password` set) are never demoted by SSO role mappings.
 - **Tokens:** access JWT (60 min, `ACCESS_TOKEN_EXPIRE_MINUTES`) + refresh JWT (30 days, `REFRESH_TOKEN_EXPIRE_DAYS`). Refresh tokens are tracked by JTI in Redis; logout invalidates the JTI.
 - **Passkeys:** stored in `passkeys` table. `@simplewebauthn/server` on the backend, `@simplewebauthn/browser` on the frontend (dynamic import).
 - **Per-request auth:** `deps.py` → `get_current_user` decodes the access JWT from the `Authorization: Bearer` header.
-- **nginx auth_request:** every request to a deployed app hits `GET /api/v1/auth/verify?app={safe_name}` before being proxied. The verify endpoint checks JWT + per-app `allowed_users` allowlist.
+- **nginx auth_request:** every request to a deployed app hits `GET /api/v1/auth/verify?app={safe_name}` before being proxied. The verify endpoint checks JWT + per-app `allowed_users` allowlist + per-app `allowed_groups` (SSO groups).
 
 ---
 
 ## Per-app access control
 
-Apps default to owner-only access. The `allowed_users` UUID array on `app_submissions` holds explicitly granted user IDs. Rules:
+Apps default to owner-only access. Access is granted via individual user IDs (`allowed_users`) or SSO group names (`allowed_groups`). Rules:
 
 | Actor | Access |
 |---|---|
 | Submitter (owner) | Always |
 | Users in `allowed_users` | Granted |
+| Users whose SSO groups intersect `allowed_groups` | Granted |
 | Approver / Admin | Always (operational bypass) |
 | All other ICs | Blocked (403 from nginx auth_request) |
 | Public apps | No auth at all |
@@ -235,14 +266,14 @@ All pages are under `frontend/app/` using Next.js App Router.
 
 | Route | Who sees it | Purpose |
 |---|---|---|
-| `/login` | Everyone | Passkey or password login |
+| `/login` | Everyone | Passkey, password, or SSO login; handles `?sso_code=` exchange |
 | `/setup` | Admin (first run) | Setup wizard |
-| `/dashboard` | IC | Submit apps, track status, manage secrets/access |
+| `/dashboard` | IC | Submit apps, track status, manage secrets/access/groups |
 | `/dashboard/submit` | IC | Submit a new app |
 | `/dashboard/scans/[id]` | IC | Live scan report |
 | `/approvals` | Approver | Review queue |
 | `/deployments` | Admin | Manage running containers |
-| `/admin` | Admin | Users, audit log, metrics |
+| `/admin` | Admin | Users, audit log, metrics, SSO configuration |
 | `/account` | Any logged-in user | Passkey enrollment |
 
 `AuthGuard` (`components/AuthGuard.tsx`) wraps protected routes and redirects to `/login?next=...` if no valid token. Role enforcement (redirecting an IC away from `/admin`) is also in AuthGuard.
@@ -312,6 +343,7 @@ Test files:
 | `test_admin.py` | User management endpoints |
 | `test_setup.py` | First-run wizard flow |
 | `test_telemetry.py` | OpenTelemetry provider, span recording, FastAPI instrumentation |
+| `test_k8s_services.py` | K8s build, app, and ingress service unit tests (mocked K8s client) |
 
 ---
 
@@ -320,7 +352,8 @@ Test files:
 `.github/workflows/publish.yml` — triggers on every push to `main`:
 1. Builds three Docker images: `gatekeeperai-backend`, `gatekeeperai-frontend`, `gatekeeperai-git-service`
 2. Pushes all three to GHCR (`ghcr.io/jacobthomasmichael/...`) with `latest` tag
-3. Multi-platform: `linux/amd64` + `linux/arm64`
+3. Also pushes to ECR if the `ECR_REGISTRY` secret is set in the repo
+4. Multi-platform: `linux/amd64` + `linux/arm64`
 
 To deploy a new version on a running EC2 instance:
 ```bash
@@ -342,3 +375,7 @@ sudo docker compose -f infra/docker-compose.yml up -d
 - **OTel provider is set once at import time** — `main.py` calls `setup_telemetry(app)` at module level. Tests that need span recording should use `provider.get_tracer()` directly rather than the global `trace.get_tracer()`.
 - **Mac zip uploads** — GK automatically flattens single-subdirectory zips and strips `__MACOSX/`. Users can zip either a folder or its contents.
 - **Streamlit API versions** — `st.context.headers` and `use_container_width` require `streamlit>=1.37`. Recommend `streamlit==1.40.0` in `GKAPP.md` examples.
+- **Deployed containers have a read-only root filesystem.** Only `/tmp` is writable (128 MB tmpfs). Apps that write outside `/tmp` at runtime will crash. `HOME=/tmp` is set in all generated Dockerfiles to redirect common write paths (pip cache, framework temp files) there.
+- **K8s mode requires three env vars** — `DEPLOY_BACKEND=kubernetes` will fail at startup unless `BUILD_CONTEXT_BUCKET` and `ECR_REGISTRY` are also set. The Pydantic validator raises a clear error if they're missing.
+- **K8s resource name length** — `safe_name` (from the app name) is truncated before being used in K8s resource names to stay within the 63-char limit. The app name validator caps names at 50 chars.
+- **SSO admin lockout guard** — if a user account has a `hashed_password` set (i.e. created locally, not via SSO), the SSO callback never updates their role. This prevents the setup admin from being demoted if they also happen to exist in the IdP.
