@@ -5,6 +5,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+RUN groupadd --system appgroup && \
+    useradd --system --gid appgroup --no-create-home appuser && \
+    chown -R appuser:appgroup /app
+ENV HOME=/tmp
+USER appuser
 EXPOSE 8501
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
 """,
@@ -14,6 +19,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+RUN groupadd --system appgroup && \
+    useradd --system --gid appgroup --no-create-home appuser && \
+    chown -R appuser:appgroup /app
+ENV HOME=/tmp
+USER appuser
 EXPOSE 7860
 CMD ["python", "app.py"]
 """,
@@ -23,6 +33,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+RUN groupadd --system appgroup && \
+    useradd --system --gid appgroup --no-create-home appuser && \
+    chown -R appuser:appgroup /app
+ENV HOME=/tmp
+USER appuser
 EXPOSE 8000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 """,
@@ -32,6 +47,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+RUN groupadd --system appgroup && \
+    useradd --system --gid appgroup --no-create-home appuser && \
+    chown -R appuser:appgroup /app
+ENV HOME=/tmp
+USER appuser
 CMD ["python", "main.py"]
 """,
     "nodejs-next": """\
@@ -40,7 +60,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
-RUN npm run build
+RUN npm run build && chown -R node:node /app
+ENV HOME=/tmp
+USER node
 EXPOSE 3000
 CMD ["npm", "start"]
 """,
@@ -50,6 +72,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
+RUN chown -R node:node /app
+ENV HOME=/tmp
+USER node
 EXPOSE 3000
 CMD ["node", "index.js"]
 """,
@@ -64,6 +89,11 @@ _FALLBACK = """\
 FROM python:3.11-slim
 WORKDIR /app
 COPY . .
+RUN groupadd --system appgroup && \
+    useradd --system --gid appgroup --no-create-home appuser && \
+    chown -R appuser:appgroup /app
+ENV HOME=/tmp
+USER appuser
 CMD ["python", "main.py"]
 """
 

@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import io
 import json
 import subprocess
@@ -29,6 +30,20 @@ SCANNERS = [
     PiiScanner(),
     LLMScanner(),
 ]
+
+
+def _run_scanner_sync(scanner, work_dir: str, context: ScanContext):
+    """Run one scanner in a thread pool and publish its SSE events."""
+    _publish(context.scan_id, {"event": "scanner_started", "scanner": scanner.name})
+    result = scanner.run(work_dir, context)
+    _publish(context.scan_id, {
+        "event": "scanner_complete",
+        "scanner": result.scanner_name,
+        "status": result.status,
+        "severity": result.severity,
+        "duration_ms": result.duration_ms,
+    })
+    return result
 
 
 def _publish(scan_id: str, event: dict) -> None:
@@ -127,33 +142,30 @@ async def _run_with_session(scan_id: str, SessionLocal) -> None:
                 detected_type=detected_type,
             )
 
-            scanner_results = []
-            for scanner in SCANNERS:
-                _publish(scan_id, {"event": "scanner_started", "scanner": scanner.name})
+            # Run all scanners in parallel threads; each publishes its own SSE events.
+            # asyncio.gather preserves submission order in results even though
+            # completion order is non-deterministic.
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(SCANNERS)) as pool:
+                tasks = [
+                    loop.run_in_executor(pool, _run_scanner_sync, scanner, work_dir, context)
+                    for scanner in SCANNERS
+                ]
+                scanner_results = list(await asyncio.gather(*tasks))
 
-                result = scanner.run(work_dir, context)
-
-                # Persist scan_result row
+            # Persist results to DB sequentially after all scanners complete.
+            for result in scanner_results:
                 db_result = ScanResultModel(
                     scan_id=scan.id,
                     scanner_name=result.scanner_name,
                     status=result.status,
                     severity=result.severity,
                     findings=result.findings,
-                    raw_output=result.raw_output[:4000],  # cap stored raw output
+                    raw_output=result.raw_output[:4000],
                     duration_ms=result.duration_ms,
                 )
                 db.add(db_result)
                 await db.flush()
-
-                scanner_results.append(result)
-                _publish(scan_id, {
-                    "event": "scanner_complete",
-                    "scanner": result.scanner_name,
-                    "status": result.status,
-                    "severity": result.severity,
-                    "duration_ms": result.duration_ms,
-                })
 
             # Compute final risk tier
             risk_tier, risk_score = compute_risk_tier(scanner_results)
