@@ -33,10 +33,6 @@ spec:
             - --concurrency=2
           env:
             {{- include "gatekeeperai.backendEnv" . | nindent 12 }}
-            - name: BUILD_CONTEXT_BUCKET
-              value: {{ .Values.aws.buildContextBucket | quote }}
-            - name: ECR_REGISTRY
-              value: {{ .Values.aws.ecrRegistry | quote }}
           volumeMounts:
             - name: git-repos
               mountPath: /git-repos
