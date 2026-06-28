@@ -1,7 +1,10 @@
+import logging
 import os
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, EmailStr, field_validator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -89,8 +92,14 @@ def _patch_env_file(updates: dict[str, str]) -> None:
         if key not in written_keys:
             new_lines.append(f"{key}={value}\n")
 
-    with open(_ENV_FILE_PATH, "w") as f:
-        f.writelines(new_lines)
+    try:
+        with open(_ENV_FILE_PATH, "w") as f:
+            f.writelines(new_lines)
+    except PermissionError:
+        # In Kubernetes the root filesystem is read-only; config is managed via
+        # Helm values/Secrets instead of a .env file. Log and continue — the
+        # admin user was already written to the database.
+        logger.warning("Cannot write %s (read-only filesystem); skipping env file update", _ENV_FILE_PATH)
 
 
 @router.get("/status")
