@@ -94,7 +94,7 @@ jobs:
         with:
           context: ./backend
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: ${{ steps.backend-meta.outputs.tags }}
           labels: ${{ steps.backend-meta.outputs.labels }}
           cache-from: type=gha
@@ -117,7 +117,7 @@ jobs:
         with:
           context: ./frontend
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: ${{ steps.frontend-meta.outputs.tags }}
           labels: ${{ steps.frontend-meta.outputs.labels }}
           build-args: |
@@ -142,7 +142,7 @@ jobs:
         with:
           context: ./infra/git-service
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: ${{ steps.git-service-meta.outputs.tags }}
           labels: ${{ steps.git-service-meta.outputs.labels }}
           cache-from: type=gha
