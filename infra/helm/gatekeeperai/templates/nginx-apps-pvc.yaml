@@ -16,13 +16,12 @@ spec:
     - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
   storageClassName: {{ .Values.storage.storageClass }}
-  csi:
-    driver: efs.csi.aws.com
-    # Replace with the EFS filesystem ID from `terraform output efs_id`
-    # For per-directory isolation, use the access point format:
-    #   fs-XXXXXXXXXXXXXXXXX::fsap-XXXXXXXXXXXXXXXXX
-    # Access point ID from: `terraform output efs_nginx_apps_access_point_id`
-    volumeHandle: "{{ required "storage.efsFileSystemId is required for EKS (get it from: terraform output efs_id)" .Values.storage.efsFileSystemId }}"
+  mountOptions:
+    - noresvport
+    - nofsc
+  nfs:
+    server: "{{ required "storage.efsFileSystemId is required for EKS (get it from: terraform output efs_id)" .Values.storage.efsFileSystemId }}.efs.{{ .Values.aws.region }}.amazonaws.com"
+    path: /
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

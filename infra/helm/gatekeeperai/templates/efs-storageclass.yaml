@@ -15,3 +15,9 @@ metadata:
 provisioner: efs.csi.aws.com
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
+# Disable TLS to avoid amazon-efs-mount-watchdog dependency, which fails to
+# start in the CSI node container ("unrecognized init system aws-efs-csi-dri").
+# Traffic remains within the VPC; EFS encrypts data at rest by default.
+mountOptions:
+  - noresvport
+  - nofsc

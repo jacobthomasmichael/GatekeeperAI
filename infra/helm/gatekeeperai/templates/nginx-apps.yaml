@@ -40,6 +40,9 @@ spec:
             - name: git-repos
               mountPath: /git-repos
               readOnly: true
+            # nginx running as non-root (UID 101) needs a writable cache dir.
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
           resources:
             {{- toYaml .Values.resources.nginxApps | nindent 12 }}
           securityContext:
@@ -105,3 +108,5 @@ spec:
         - name: git-repos
           persistentVolumeClaim:
             claimName: {{ include "gatekeeperai.fullname" . }}-git-repos
+        - name: nginx-cache
+          emptyDir: {}

@@ -108,4 +108,10 @@ Common environment variables injected into every backend container
   value: {{ .Values.env.hookSecret | quote }}
 - name: DEPLOY_BACKEND
   value: {{ .Values.env.deployBackend | quote }}
+- name: AWS_REGION
+  value: {{ .Values.aws.region | quote }}
+- name: BUILD_CONTEXT_BUCKET
+  value: {{ .Values.aws.buildContextBucket | quote }}
+- name: ECR_REGISTRY
+  value: {{ .Values.aws.ecrRegistry | quote }}
 {{- end }}
