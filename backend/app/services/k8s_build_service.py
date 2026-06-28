@@ -67,7 +67,20 @@ def build_and_push(
         aws_region=settings.AWS_REGION,
     )
 
-    batch_v1.create_namespaced_job(BUILD_NAMESPACE, job_body)
+    try:
+        batch_v1.create_namespaced_job(BUILD_NAMESPACE, job_body)
+    except ApiException as e:
+        if e.status == 409:
+            # Stale job from a previous attempt — delete and recreate.
+            logger.warning("Kaniko Job %s already exists; deleting and recreating", job_name)
+            batch_v1.delete_namespaced_job(
+                job_name, BUILD_NAMESPACE,
+                body=client.V1DeleteOptions(propagation_policy="Foreground"),
+            )
+            _wait_for_job_deletion(batch_v1, job_name, BUILD_NAMESPACE)
+            batch_v1.create_namespaced_job(BUILD_NAMESPACE, job_body)
+        else:
+            raise
     logger.info("Created Kaniko Job %s", job_name)
 
     # --- Poll until complete or timeout ---
@@ -133,6 +146,19 @@ def _kaniko_job(
             ),
         ),
     )
+
+
+def _wait_for_job_deletion(batch_v1: client.BatchV1Api, job_name: str, namespace: str) -> None:
+    """Wait until the job is gone so we can recreate it with the same name."""
+    for _ in range(30):
+        try:
+            batch_v1.read_namespaced_job_status(job_name, namespace)
+            time.sleep(2)
+        except ApiException as e:
+            if e.status == 404:
+                return
+            raise
+    raise TimeoutError(f"Timed out waiting for job {job_name} to be deleted")
 
 
 def _wait_for_job(batch_v1: client.BatchV1Api, job_name: str, namespace: str) -> None:
