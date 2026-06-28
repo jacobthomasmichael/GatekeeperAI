@@ -74,25 +74,32 @@ spec:
             - sh
             - -c
             - |
-              apk add --no-cache inotify-tools
-              echo "nginx-reloader: watching /etc/nginx/conf.d for changes..."
-              while inotifywait -e modify,create,delete /etc/nginx/conf.d/; do
-                echo "nginx-reloader: change detected, reloading nginx..."
-                nginx -s reload
+              last=""
+              while true; do
+                cur=$(find /etc/nginx/conf.d -name '*.conf' -exec md5sum {} \; 2>/dev/null | sort | md5sum)
+                if [ "$cur" != "$last" ]; then
+                  nginx -s reload 2>/dev/null || true
+                  last="$cur"
+                fi
+                sleep 10
               done
           volumeMounts:
             - name: nginx-apps
               mountPath: /etc/nginx/conf.d
           resources:
             requests:
-              cpu: 10m
+              cpu: 5m
               memory: 16Mi
             limits:
-              cpu: 50m
+              cpu: 20m
               memory: 32Mi
           securityContext:
-            runAsUser: 0
+            runAsNonRoot: true
+            runAsUser: 101
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
 
       volumes:
         - name: nginx-config
