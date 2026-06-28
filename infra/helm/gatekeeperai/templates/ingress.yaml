@@ -16,9 +16,6 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     # Enable WebSocket upgrades (needed for Next.js HMR and some Streamlit apps)
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection "upgrade";
     # Auth subrequest response caching — 30-second TTL keyed on Authorization + host + URI.
     # Requires the nginx-ingress controller ConfigMap to have http-snippet and location-snippet
     # set from the gatekeeperai-nginx-cache ConfigMap (cluster-level, applied once post-install).
