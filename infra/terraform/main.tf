@@ -407,7 +407,7 @@ resource "aws_db_instance" "postgres" {
   backup_window           = "03:00-04:00"
   maintenance_window      = "sun:04:30-sun:05:30"
 
-  deletion_protection = true
+  deletion_protection = false
 
   tags = {
     Name = "${var.cluster_name}-postgres"
@@ -474,6 +474,7 @@ resource "aws_ecr_repository" "repos" {
 
   name                 = each.key
   image_tag_mutability = "MUTABLE"   # Allows overwriting :latest on each push
+  force_delete         = true        # Allow destroy even when images exist
 
   image_scanning_configuration {
     scan_on_push = true
