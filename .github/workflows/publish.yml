@@ -5,6 +5,7 @@ on:
     branches: [main]
   release:
     types: [published]
+  workflow_dispatch:
 
 env:
   BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/gatekeeperai-backend
@@ -17,7 +18,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write  # Required for OIDC-based AWS credential federation
+      id-token: write
 
     steps:
       - name: Checkout
@@ -30,21 +31,38 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── ECR login (skipped if ECR_REGISTRY secret is not set) ────────────────
+      # ── ECR login (skipped when ECR_REGISTRY secret is not set) ──────────────
       - name: Configure AWS credentials for ECR
-        if: ${{ secrets.ECR_REGISTRY != '' }}
+        if: secrets.ECR_REGISTRY != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Log in to ECR
-        if: ${{ secrets.ECR_REGISTRY != '' }}
-        id: ecr-login
+        if: secrets.ECR_REGISTRY != ''
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      # Build image lists — append ECR paths when ECR_REGISTRY is configured
+      - name: Compute image lists
+        id: imgs
+        env:
+          ECR: ${{ secrets.ECR_REGISTRY }}
+        run: |
+          backend="${{ env.BACKEND_IMAGE }}"
+          frontend="${{ env.FRONTEND_IMAGE }}"
+          git_svc="${{ env.GIT_SERVICE_IMAGE }}"
+          if [ -n "$ECR" ]; then
+            backend="$backend"$'\n'"$ECR/gatekeeperai/backend"
+            frontend="$frontend"$'\n'"$ECR/gatekeeperai/frontend"
+            git_svc="$git_svc"$'\n'"$ECR/gatekeeperai/git-service"
+          fi
+          printf 'backend<<EOF\n%s\nEOF\n' "$backend" >> "$GITHUB_OUTPUT"
+          printf 'frontend<<EOF\n%s\nEOF\n' "$frontend" >> "$GITHUB_OUTPUT"
+          printf 'git_svc<<EOF\n%s\nEOF\n' "$git_svc" >> "$GITHUB_OUTPUT"
 
       # ── Backend ───────────────────────────────────────────────────────────────
 
@@ -52,9 +70,7 @@ jobs:
         id: backend-meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.BACKEND_IMAGE }}
-            ${{ secrets.ECR_REGISTRY != '' && format('{0}/gatekeeperai/backend', secrets.ECR_REGISTRY) || '' }}
+          images: ${{ steps.imgs.outputs.backend }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -77,9 +93,7 @@ jobs:
         id: frontend-meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.FRONTEND_IMAGE }}
-            ${{ secrets.ECR_REGISTRY != '' && format('{0}/gatekeeperai/frontend', secrets.ECR_REGISTRY) || '' }}
+          images: ${{ steps.imgs.outputs.frontend }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -104,9 +118,7 @@ jobs:
         id: git-service-meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.GIT_SERVICE_IMAGE }}
-            ${{ secrets.ECR_REGISTRY != '' && format('{0}/gatekeeperai/git-service', secrets.ECR_REGISTRY) || '' }}
+          images: ${{ steps.imgs.outputs.git_svc }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
