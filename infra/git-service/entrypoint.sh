@@ -4,10 +4,11 @@ set -e
 # Ensure git-repos directory is owned by the git user
 chown -R git:git /git-repos
 
-# Set up authorized_keys
-touch /home/git/.ssh/authorized_keys
-chown git:git /home/git/.ssh/authorized_keys
-chmod 600 /home/git/.ssh/authorized_keys
+# Set up authorized_keys — in Kubernetes the file is mounted read-only from a
+# ConfigMap, so these operations may be no-ops; ignore errors gracefully.
+touch /home/git/.ssh/authorized_keys 2>/dev/null || true
+chown git:git /home/git/.ssh/authorized_keys 2>/dev/null || true
+chmod 600 /home/git/.ssh/authorized_keys 2>/dev/null || true
 
 # Write GATEKEEPER_API_URL into the git user's environment so post-receive hooks
 # can call the correct internal API address (http://api:8000 in Docker).
