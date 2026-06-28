@@ -91,12 +91,8 @@ spec:
               cpu: 50m
               memory: 32Mi
           securityContext:
-            runAsNonRoot: true
-            runAsUser: 101
+            runAsUser: 0
             allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
 
       volumes:
         - name: nginx-config

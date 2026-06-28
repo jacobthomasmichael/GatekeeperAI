@@ -33,6 +33,8 @@ spec:
             - worker.celery_app.celery_app
             - beat
             - --loglevel=info
+            - --schedule
+            - /tmp/celerybeat-schedule
           env:
             {{- include "gatekeeperai.backendEnv" . | nindent 12 }}
           resources:
