@@ -32,15 +32,28 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # ── ECR login (skipped when ECR_REGISTRY secret is not set) ──────────────
+      # secrets context is not available in step if: conditions — use a run step
+      # to detect configuration and gate subsequent steps on its output.
+      - name: Check ECR configuration
+        id: ecr
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+        run: |
+          if [ -n "$ECR_REGISTRY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Configure AWS credentials for ECR
-        if: secrets.ECR_REGISTRY != ''
+        if: steps.ecr.outputs.configured == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Log in to ECR
-        if: secrets.ECR_REGISTRY != ''
+        if: steps.ecr.outputs.configured == 'true'
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
