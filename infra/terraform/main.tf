@@ -306,8 +306,12 @@ resource "aws_iam_role" "worker_irsa" {
       Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
-          "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub" = "system:serviceaccount:gatekeeperai:gatekeeperai-worker"
           "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:aud" = "sts.amazonaws.com"
+        }
+        StringLike = {
+          # Allow the worker SA in the main namespace and the builds namespace
+          # (Kaniko pods run in gatekeeperai-builds and need the same IRSA role).
+          "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub" = "system:serviceaccount:gatekeeperai*:gatekeeperai-worker"
         }
       }
     }]
