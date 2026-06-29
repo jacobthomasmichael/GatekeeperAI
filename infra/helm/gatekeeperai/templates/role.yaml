@@ -31,7 +31,7 @@ metadata:
     {{- include "gatekeeperai.labels" . | nindent 4 }}
 rules:
   - apiGroups: ["apps"]
-    resources: ["deployments"]
+    resources: ["deployments", "deployments/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["services", "secrets", "configmaps", "pods", "pods/log"]
