@@ -87,7 +87,7 @@ def write_app_ingress(
     if visibility != "public":
         annotations.update({
             "nginx.ingress.kubernetes.io/auth-url": (
-                f"https://{hostname}/api/v1/auth/verify?app={safe_name}"
+                f"https://{hostname}/api/v1/auth/verify/{safe_name}"
             ),
             "nginx.ingress.kubernetes.io/auth-signin": (
                 f"https://{hostname}/login?next=$escaped_request_uri"
