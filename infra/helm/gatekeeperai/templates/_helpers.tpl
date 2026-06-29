@@ -114,4 +114,12 @@ Common environment variables injected into every backend container
   value: {{ .Values.aws.buildContextBucket | quote }}
 - name: ECR_REGISTRY
   value: {{ .Values.aws.ecrRegistry | quote }}
+- name: K8S_APPS_NAMESPACE
+  value: {{ .Values.namespaces.apps | quote }}
+- name: K8S_BUILDS_NAMESPACE
+  value: {{ .Values.namespaces.builds | quote }}
+- name: K8S_WORKER_SA_NAME
+  value: {{ include "gatekeeperai.fullname" . }}-worker
+- name: KANIKO_IMAGE
+  value: {{ .Values.kaniko.image | quote }}
 {{- end }}

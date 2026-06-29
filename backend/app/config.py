@@ -35,9 +35,13 @@ class Settings(BaseSettings):
 
     DEPLOY_BACKEND: str = "docker"  # "docker" or "kubernetes"
 
-    AWS_REGION: str = "us-east-1"
+    AWS_REGION: str = ""  # Required when DEPLOY_BACKEND=kubernetes; e.g. "us-west-2"
     BUILD_CONTEXT_BUCKET: str = ""  # Required when DEPLOY_BACKEND=kubernetes; S3 bucket for Kaniko build contexts
     ECR_REGISTRY: str = ""  # Required when DEPLOY_BACKEND=kubernetes; e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com"
+    K8S_APPS_NAMESPACE: str = "gatekeeperai-apps"      # Namespace where deployed app pods run
+    K8S_BUILDS_NAMESPACE: str = "gatekeeperai-builds"  # Namespace where Kaniko build jobs run
+    K8S_WORKER_SA_NAME: str = "gatekeeperai-worker"    # ServiceAccount name used by worker + Kaniko pods
+    KANIKO_IMAGE: str = "gcr.io/kaniko-project/executor:v1.23.0"  # Override for air-gapped installs
 
     @field_validator("DEPLOY_BACKEND")
     @classmethod

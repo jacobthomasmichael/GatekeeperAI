@@ -24,6 +24,7 @@ spec:
         {{- include "gatekeeperai.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: api
     spec:
+      serviceAccountName: {{ include "gatekeeperai.fullname" . }}-worker
       initContainers:
         # Run database migrations before the api pod comes up.
         # Uses the same image so the Alembic version always matches the code.

@@ -16,8 +16,8 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-BUILD_NAMESPACE = "gatekeeperai-builds"
-KANIKO_IMAGE = "gcr.io/kaniko-project/executor:v1.23.0"
+BUILD_NAMESPACE = settings.K8S_BUILDS_NAMESPACE
+KANIKO_IMAGE = settings.KANIKO_IMAGE
 BUILD_TIMEOUT_SECONDS = 600  # 10 minutes
 
 
@@ -40,10 +40,23 @@ def build_and_push(
     ecr_registry: e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com"
     """
     image_tag = f"{commit_sha[:12]}" if commit_sha else str(uuid.uuid4())[:12]
-    image_uri = f"{ecr_registry}/gatekeeperai-apps/{safe_name}:{image_tag}"
+    image_uri = f"{ecr_registry}/{settings.K8S_APPS_NAMESPACE}/{safe_name}:{image_tag}"
     s3_key = f"builds/{safe_name}/{image_tag}.tar.gz"
     # K8s names max 63 chars: "build-" (6) + safe_name + "-" (1) + image_tag (12) ≤ 63
     _build_name = safe_name[:44]
+
+    # --- Ensure ECR repo exists (ECR does not auto-create on push) ---
+    ecr = boto3.client("ecr", region_name=settings.AWS_REGION)
+    repo_name = f"{settings.K8S_APPS_NAMESPACE}/{safe_name}"
+    try:
+        ecr.create_repository(
+            repositoryName=repo_name,
+            imageTagMutability="MUTABLE",
+            imageScanningConfiguration={"scanOnPush": True},
+        )
+        logger.info("Created ECR repository %s", repo_name)
+    except ecr.exceptions.RepositoryAlreadyExistsException:
+        pass
 
     # --- Upload build context to S3 ---
     context_tar = _create_context_tar(build_dir)
@@ -119,7 +132,7 @@ def _kaniko_job(
                 metadata=client.V1ObjectMeta(labels={"managed-by": "gatekeeperai"}),
                 spec=client.V1PodSpec(
                     restart_policy="Never",
-                    service_account_name="gatekeeperai-worker",  # IRSA role has ECR + S3 permissions
+                    service_account_name=settings.K8S_WORKER_SA_NAME,
                     containers=[
                         client.V1Container(
                             name="kaniko",

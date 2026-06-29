@@ -5,10 +5,11 @@ Only used when DEPLOY_BACKEND=kubernetes. The Docker path continues to use nginx
 import logging
 from kubernetes import client, config as k8s_config
 from kubernetes.client.exceptions import ApiException
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-APPS_NAMESPACE = "gatekeeperai-apps"
+APPS_NAMESPACE = settings.K8S_APPS_NAMESPACE
 
 
 def _load_k8s_config() -> None:
@@ -86,7 +87,7 @@ def write_app_ingress(
     if visibility != "public":
         annotations.update({
             "nginx.ingress.kubernetes.io/auth-url": (
-                f"https://{hostname}/api/v1/auth/verify?app={safe_name}"
+                f"https://{hostname}/api/v1/auth/verify/{safe_name}"
             ),
             "nginx.ingress.kubernetes.io/auth-signin": (
                 f"https://{hostname}/login?next=$escaped_request_uri"

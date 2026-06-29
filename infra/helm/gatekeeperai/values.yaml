@@ -155,3 +155,12 @@ resources:
     limits:
       cpu: 200m
       memory: 256Mi
+
+
+namespaces:
+  apps: "gatekeeperai-apps"
+  builds: "gatekeeperai-builds"
+
+kaniko:
+  # Override for air-gapped installs that mirror images to a private registry
+  image: "gcr.io/kaniko-project/executor:v1.23.0"
