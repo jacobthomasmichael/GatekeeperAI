@@ -118,4 +118,8 @@ Common environment variables injected into every backend container
   value: {{ .Values.namespaces.apps | quote }}
 - name: K8S_BUILDS_NAMESPACE
   value: {{ .Values.namespaces.builds | quote }}
+- name: K8S_WORKER_SA_NAME
+  value: {{ include "gatekeeperai.fullname" . }}-worker
+- name: KANIKO_IMAGE
+  value: {{ .Values.kaniko.image | quote }}
 {{- end }}

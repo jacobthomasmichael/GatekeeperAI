@@ -17,7 +17,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 BUILD_NAMESPACE = settings.K8S_BUILDS_NAMESPACE
-KANIKO_IMAGE = "gcr.io/kaniko-project/executor:v1.23.0"
+KANIKO_IMAGE = settings.KANIKO_IMAGE
 BUILD_TIMEOUT_SECONDS = 600  # 10 minutes
 
 
@@ -132,7 +132,7 @@ def _kaniko_job(
                 metadata=client.V1ObjectMeta(labels={"managed-by": "gatekeeperai"}),
                 spec=client.V1PodSpec(
                     restart_policy="Never",
-                    service_account_name="gatekeeperai-worker",  # IRSA role has ECR + S3 permissions
+                    service_account_name=settings.K8S_WORKER_SA_NAME,
                     containers=[
                         client.V1Container(
                             name="kaniko",
