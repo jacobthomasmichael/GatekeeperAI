@@ -235,6 +235,10 @@ class TestBuildAndPush:
 
             mock_settings.AWS_REGION = "us-east-1"
             mock_settings.BUILD_CONTEXT_BUCKET = "gk-builds"
+            mock_settings.K8S_APPS_NAMESPACE = "gatekeeperai-apps"
+            mock_settings.K8S_BUILDS_NAMESPACE = "gatekeeperai-builds"
+            mock_settings.K8S_WORKER_SA_NAME = "gatekeeperai-worker"
+            mock_settings.KANIKO_IMAGE = "gcr.io/kaniko-project/executor:v1.23.0"
 
             mock_batch = mock_batch_cls.return_value
             job_status = MagicMock()
@@ -266,6 +270,10 @@ class TestBuildAndPush:
 
             mock_settings.AWS_REGION = "us-east-1"
             mock_settings.BUILD_CONTEXT_BUCKET = "gk-builds"
+            mock_settings.K8S_APPS_NAMESPACE = "gatekeeperai-apps"
+            mock_settings.K8S_BUILDS_NAMESPACE = "gatekeeperai-builds"
+            mock_settings.K8S_WORKER_SA_NAME = "gatekeeperai-worker"
+            mock_settings.KANIKO_IMAGE = "gcr.io/kaniko-project/executor:v1.23.0"
             mock_boto.return_value.upload_file.side_effect = Exception("S3 error")
 
             import app.services.k8s_build_service as svc
