@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     BUILD_CONTEXT_BUCKET: str = ""  # Required when DEPLOY_BACKEND=kubernetes; S3 bucket for Kaniko build contexts
     ECR_REGISTRY: str = ""  # Required when DEPLOY_BACKEND=kubernetes; e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com"
+    K8S_APPS_NAMESPACE: str = "gatekeeperai-apps"    # Namespace where deployed app pods run
+    K8S_BUILDS_NAMESPACE: str = "gatekeeperai-builds"  # Namespace where Kaniko build jobs run
 
     @field_validator("DEPLOY_BACKEND")
     @classmethod

@@ -7,10 +7,11 @@ import logging
 from datetime import datetime
 from kubernetes import client, config as k8s_config
 from kubernetes.client.exceptions import ApiException
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-APPS_NAMESPACE = "gatekeeperai-apps"
+APPS_NAMESPACE = settings.K8S_APPS_NAMESPACE
 
 
 def _load_k8s_config() -> None:

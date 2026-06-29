@@ -155,3 +155,8 @@ resources:
     limits:
       cpu: 200m
       memory: 256Mi
+
+
+namespaces:
+  apps: "gatekeeperai-apps"
+  builds: "gatekeeperai-builds"

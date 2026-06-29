@@ -7,7 +7,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "gatekeeperai.fullname" . }}-app-isolation
-  namespace: gatekeeperai-apps
+  namespace: {{ .Values.namespaces.apps }}
   labels:
     {{- include "gatekeeperai.labels" . | nindent 4 }}
 spec:

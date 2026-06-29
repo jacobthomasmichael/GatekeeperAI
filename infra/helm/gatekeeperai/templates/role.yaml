@@ -26,7 +26,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ include "gatekeeperai.fullname" . }}-worker-apps
-  namespace: gatekeeperai-apps
+  namespace: {{ .Values.namespaces.apps }}
   labels:
     {{- include "gatekeeperai.labels" . | nindent 4 }}
 rules:
@@ -44,7 +44,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ include "gatekeeperai.fullname" . }}-worker-apps
-  namespace: gatekeeperai-apps
+  namespace: {{ .Values.namespaces.apps }}
   labels:
     {{- include "gatekeeperai.labels" . | nindent 4 }}
 roleRef:
@@ -62,7 +62,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ include "gatekeeperai.fullname" . }}-worker-builds
-  namespace: gatekeeperai-builds
+  namespace: {{ .Values.namespaces.builds }}
   labels:
     {{- include "gatekeeperai.labels" . | nindent 4 }}
 rules:
@@ -77,7 +77,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ include "gatekeeperai.fullname" . }}-worker-builds
-  namespace: gatekeeperai-builds
+  namespace: {{ .Values.namespaces.builds }}
   labels:
     {{- include "gatekeeperai.labels" . | nindent 4 }}
 roleRef:
