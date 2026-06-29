@@ -45,6 +45,19 @@ def build_and_push(
     # K8s names max 63 chars: "build-" (6) + safe_name + "-" (1) + image_tag (12) ≤ 63
     _build_name = safe_name[:44]
 
+    # --- Ensure ECR repo exists (ECR does not auto-create on push) ---
+    ecr = boto3.client("ecr", region_name=settings.AWS_REGION)
+    repo_name = f"gatekeeperai-apps/{safe_name}"
+    try:
+        ecr.create_repository(
+            repositoryName=repo_name,
+            imageTagMutability="MUTABLE",
+            imageScanningConfiguration={"scanOnPush": True},
+        )
+        logger.info("Created ECR repository %s", repo_name)
+    except ecr.exceptions.RepositoryAlreadyExistsException:
+        pass
+
     # --- Upload build context to S3 ---
     context_tar = _create_context_tar(build_dir)
     try:
