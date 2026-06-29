@@ -261,16 +261,30 @@ async def update_visibility(
         app.public_flagged_at = None
     await db.flush()
 
-    # If the app is deployed, rewrite the nginx config immediately
-    if app.status == "deployed" and app.stable_external_port and app.stable_container_name:
+    # If the app is deployed, update the proxy config / ingress immediately
+    if app.status == "deployed":
         import re
-        from app.services import nginx_service
+        import logging
+        from app.config import settings
         safe_name = re.sub(r"[^a-z0-9_-]", "-", app.name.lower())
         try:
-            nginx_service.write_app_config(safe_name, app.stable_external_port, app.visibility)
+            if settings.DEPLOY_BACKEND == "kubernetes":
+                from sqlalchemy import select as sa_select
+                from app.models.deployment import Deployment
+                dep_result = await db.execute(
+                    sa_select(Deployment)
+                    .where(Deployment.submission_id == app.id)
+                    .order_by(Deployment.created_at.desc())
+                )
+                dep = dep_result.scalars().first()
+                if dep and dep.internal_port and dep.public_url:
+                    from app.services.k8s_ingress_service import write_app_ingress
+                    write_app_ingress(safe_name, dep.internal_port, dep.public_url, app.visibility)
+            elif app.stable_external_port and app.stable_container_name:
+                from app.services import nginx_service
+                nginx_service.write_app_config(safe_name, app.stable_external_port, app.visibility)
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning("nginx config update failed: %s", e)
+            logging.getLogger(__name__).warning("proxy config update failed: %s", e)
 
     await db.commit()
     return await _with_rejection(app, db)
