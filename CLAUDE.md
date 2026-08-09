@@ -184,7 +184,7 @@ alembic upgrade head
    - `pii_scanner.py` — regex patterns for PII
    - `llm_scanner.py` — Claude code review via Anthropic API
    - `base.py` — shared `ScanContext` and `ScanResult` dataclasses (not a scanner itself)
-4. `risk_engine.py` aggregates findings → risk score (0–100) + tier (low/medium/high/critical)
+4. `risk_engine.py` aggregates findings → risk score (0–100) + tier (green ≤29 / yellow 30–59 / red ≥60, or red forced outright by any single scanner)
 5. Writes scan record to DB; publishes final `complete` SSE event
 
 Scan events stream to the frontend via `GET /scans/{id}/events` (Server-Sent Events).

@@ -21,7 +21,7 @@ GatekeeperAI is an on-premises platform that lets teams safely adopt third-party
 ## Key features
 
 - **Automated multi-scanner pipeline** — secrets detection, CVE audit, egress analysis, PII check, and LLM code review run concurrently on every push
-- **Risk tiering** — apps are automatically scored and assigned a risk tier (low / medium / high / critical) that determines review urgency
+- **Risk tiering** — apps are automatically scored and assigned a risk tier (green / yellow / red, with any scanner able to force red) that determines review urgency
 - **SLA enforcement** — overdue approvals are flagged and escalators are notified via email
 - **Encrypted secret injection** — per-app secrets are AES-256 encrypted at rest and injected at container startup
 - **Per-app access control** — apps are private by default; owners grant access by individual email or by SSO group; nginx `auth_request` enforces this on every request
