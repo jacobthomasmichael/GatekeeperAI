@@ -91,7 +91,7 @@ The platform supports both zip upload and git push. Git push goes through a sepa
 
 ## Kubernetes / EKS deployment model
 
-The single-host Docker model described above ("Tradeoffs I made knowingly") was always a known ceiling. The EKS path is implemented and ships on the `feature/eks-kubernetes` branch. The key design decisions:
+The single-host Docker model described above ("Tradeoffs I made knowingly") was always a known ceiling. The EKS path is implemented and merged to `main`. The key design decisions:
 
 **Dual-mode via a single env var.** `DEPLOY_BACKEND=docker` (the default) preserves every existing behaviour exactly — `container_service.py` and `nginx_service.py` are untouched. `DEPLOY_BACKEND=kubernetes` activates the three new services: `k8s_build_service.py` (Kaniko → ECR), `k8s_app_service.py` (K8s Deployment + Secret lifecycle), and `k8s_ingress_service.py` (dynamic Ingress resources). Compose installs never set the flag, so they're unaffected by any K8s code.
 
