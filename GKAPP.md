@@ -66,6 +66,7 @@ Do not generate any of the following — GatekeeperAI already provides them:
 ---
 ## Alternate Conversation Starter
 
+```
 We're going to plan and build [PROJECT] together. Here's how I want to work:
 
 1. Plan backward from the end state. I'll describe the destination first. Before writing any code, restate your understanding of the end state back to me, then propose a chunked sequence of steps working backward from it to where we are now. Flag any assumption or ambiguity before proceeding — don't guess silently.
@@ -79,7 +80,7 @@ We're going to plan and build [PROJECT] together. Here's how I want to work:
 5. Prefer existing, well-established patterns/libraries over building from scratch, unless there's a specific reason not to — and if you recommend one, name it explicitly and briefly say why it fits.
 
 Here's the end state: [describe destination]
-
+```
 
 ## Accessing the Current User
 
