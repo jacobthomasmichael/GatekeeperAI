@@ -17,7 +17,6 @@ GatekeeperAI is a governed deployment platform for internal AI apps. When someon
 **Your job is to build the application logic. GatekeeperAI handles everything around it.**
 
 ---
-
 ## Conversational Build Starter
 
 When helping a user build a GatekeeperAI app, start by asking these questions one at a time before writing any code:
@@ -65,6 +64,22 @@ Do not generate any of the following — GatekeeperAI already provides them:
 | Role/permission middleware | Access control is managed in GK |
 
 ---
+## Alternate Conversation Starter
+
+We're going to plan and build [PROJECT] together. Here's how I want to work:
+
+1. Plan backward from the end state. I'll describe the destination first. Before writing any code, restate your understanding of the end state back to me, then propose a chunked sequence of steps working backward from it to where we are now. Flag any assumption or ambiguity before proceeding — don't guess silently.
+
+2. Each chunk needs a visible checkpoint. Every chunk should end in something demoable — a working endpoint, a passing test, visible output — not just code that compiles. If a chunk can't produce something demoable on its own, tell me and we'll re-split it.
+
+3. Log real decisions as we go, not at the end. Any time we hit a genuine fork — a library choice, an architecture call, a tradeoff — before proceeding, state the choice, the alternative(s) considered, and the reasoning in 2-4 sentences, and add it to a running DECISIONS.md. Skip logging for boilerplate or obvious choices; only log the ones where someone could reasonably ask "why not the other way?"
+
+4. Interrupt me if I miss something. If I move forward too fast and skip a real risk, edge case, or requirement gap, stop and flag it before continuing — even if I didn't ask.
+
+5. Prefer existing, well-established patterns/libraries over building from scratch, unless there's a specific reason not to — and if you recommend one, name it explicitly and briefly say why it fits.
+
+Here's the end state: [describe destination]
+
 
 ## Accessing the Current User
 
