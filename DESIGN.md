@@ -4,6 +4,148 @@ A summary of the key choices behind GatekeeperAI's architecture — what I picke
 
 ---
 
+## Architecture diagrams
+
+Both deployment backends run the same application code behind the same `DEPLOY_BACKEND` switch — the diagrams below show how the request path and the deploy path differ between them.
+
+### Docker Compose deployment
+
+```mermaid
+flowchart LR
+    Browser["Browser"]
+
+    subgraph platform["GatekeeperAI — Docker Compose (single host)"]
+        Nginx["Nginx<br/>reverse proxy + auth_request"]
+        API["FastAPI<br/>:8000"]
+        Worker["Celery Worker<br/>scan + deploy tasks"]
+        Beat["Celery Beat<br/>SLA sweep every 15m"]
+        PG[("PostgreSQL")]
+        Redis[("Redis<br/>broker + JTI + challenges")]
+        Docker["Docker Daemon<br/>(host socket)"]
+    end
+
+    subgraph apps["Deployed app containers"]
+        App1["gka-snake-a1b2c3d4<br/>:8000 · read-only FS · cap_drop=ALL"]
+    end
+
+    Browser -->|HTTPS| Nginx
+    Nginx -->|"/api/v1"| API
+    Nginx -->|"auth_request gate then proxy_pass"| App1
+    API --> PG
+    API --> Redis
+    API -->|enqueue| Worker
+    Worker --> PG
+    Worker --> Redis
+    Worker -->|build + run| Docker
+    Docker -.->|manages| App1
+    Beat --> PG
+
+    classDef entry fill:#4f46e5,stroke:#3730a3,color:#fff
+    classDef compute fill:#eef2ff,stroke:#4f46e5,color:#1e293b
+    classDef store fill:#f1f5f9,stroke:#64748b,color:#1e293b
+    classDef app fill:#dcfce7,stroke:#16a34a,color:#14532d
+    class Browser,Nginx entry
+    class API,Worker,Beat,Docker compute
+    class PG,Redis store
+    class App1 app
+```
+
+**Read on this:** everything — platform and every tenant app — runs as a container on one host. The worker holds the Docker socket, so it can build and run tenant images directly; that convenience is also the sharpest security edge on this path (see [Tradeoffs I made knowingly](#tradeoffs-i-made-knowingly)). Nginx is the only thing standing between the internet and a deployed app; it calls back into the API's `auth_request` endpoint on every single request before proxying through.
+
+### Kubernetes / EKS deployment
+
+```mermaid
+flowchart LR
+    Browser["Browser"]
+
+    subgraph eks["EKS cluster"]
+        subgraph platformns["gatekeeperai namespace"]
+            Ingress["nginx-ingress"]
+            API["FastAPI pods<br/>HPA 2-10 on CPU"]
+            Worker["Celery Worker pods"]
+            Beat["Celery Beat<br/>1 replica"]
+        end
+        subgraph buildns["gatekeeperai-builds namespace"]
+            Kaniko["Kaniko Job<br/>no Docker socket"]
+        end
+        subgraph appsns["gatekeeperai-apps namespace<br/>NetworkPolicy: no RFC-1918 egress"]
+            AppDeploy["gk-app-snake<br/>Deployment"]
+            AppSvc["gk-app-snake<br/>ClusterIP Service"]
+            AppIngress["gk-app-snake<br/>Ingress · auth-url annotation"]
+        end
+    end
+
+    subgraph aws["AWS managed services"]
+        RDS[("RDS PostgreSQL")]
+        EC[("ElastiCache Redis")]
+        S3[("S3<br/>build contexts")]
+        ECR[("ECR repo<br/>gatekeeperai-apps/snake")]
+    end
+
+    Browser -->|HTTPS| Ingress
+    Ingress -->|"/api/v1"| API
+    Ingress --> AppIngress --> AppSvc --> AppDeploy
+    API --> RDS
+    API --> EC
+    API -->|enqueue| Worker
+    Worker --> RDS
+    Worker -->|"1 . upload context"| S3
+    Worker -->|"2 . create Job"| Kaniko
+    Kaniko -->|"3 . read context"| S3
+    Kaniko -->|"4 . push image"| ECR
+    Worker -->|"5 . create Deployment"| AppDeploy
+    ECR -->|"pulls image"| AppDeploy
+    Beat --> RDS
+
+    classDef entry fill:#4f46e5,stroke:#3730a3,color:#fff
+    classDef compute fill:#eef2ff,stroke:#4f46e5,color:#1e293b
+    classDef build fill:#fef9c3,stroke:#ca8a04,color:#713f12
+    classDef store fill:#f1f5f9,stroke:#64748b,color:#1e293b
+    classDef app fill:#dcfce7,stroke:#16a34a,color:#14532d
+    class Browser,Ingress entry
+    class API,Worker,Beat compute
+    class Kaniko build
+    class RDS,EC,S3,ECR store
+    class AppDeploy,AppSvc,AppIngress app
+```
+
+**Read on this:** the platform and every tenant app now run in different namespaces with different blast radii. Kaniko builds images with no Docker socket and no daemon access at all — the numbered edges above are the actual build sequence (S3 upload → Kaniko Job → Kaniko reads S3 → pushes to ECR → worker creates the K8s Deployment → the pod pulls from ECR). RDS, ElastiCache, S3, and ECR are managed AWS services instead of containers on the same host, which is what lets the platform and the tenant apps scale independently of each other.
+
+### Worked example: Snake
+
+Both diagrams above use the same real app — the Snake game featured on [gatekeeperai.io](https://www.gatekeeperai.io). The actual submission lives in [`examples/snake-app/`](./examples/snake-app/) in this repo: a single `main.py` (stdlib `http.server`, zero dependencies) and its own `Dockerfile`. No `requirements.txt`, `package.json`, or `index.html`.
+
+**Type detection:** `_detect_app_type()` (`backend/app/scanners/pipeline.py`) looks for exactly those three files and finds none, so `detected_type` is `None`. That's not a problem — the deploy task only generates a Dockerfile *if the submission doesn't already have one* (`backend/worker/deploy_task.py`). This submission does, so GatekeeperAI uses it as-is and parses `EXPOSE 8000` straight out of it to set the container's internal port.
+
+**A real security nuance this surfaces:** the submitted Dockerfile has no `USER` directive, so the process runs as root inside the container's own namespace. GatekeeperAI's own generated Dockerfiles always create and switch to a non-root user — but a submitter who brings their own Dockerfile controls that part themselves. The platform's other controls (read-only root filesystem, dropped Linux capabilities, `no-new-privileges`, CPU/memory limits) are enforced at the runtime level regardless of what's in the image, so those still apply here unchanged.
+
+**A real filesystem constraint this surfaces:** the app writes its SQLite leaderboard to `/data/scores.db` by default. GatekeeperAI's containers run with a read-only root filesystem — only `/tmp` is writable. As submitted, this app crashes on startup unless a `DB_PATH=/tmp/scores.db` secret is configured before deploying. That's left in deliberately rather than fixed — it's a genuine, concrete illustration of what "read-only root filesystem" actually means for a submission, not just a bullet point.
+
+| | Docker Compose | Kubernetes |
+|---|---|---|
+| Container / pod name | `gka-snake-{submission-id[:8]}` | `gk-app-snake` — Deployment, Service, and Ingress all share this name |
+| Build mechanism | `docker build` on the host, via the Docker SDK | Kaniko Job — no daemon, no socket |
+| Image location | Local Docker image store on the host | `{ecr-registry}/gatekeeperai-apps/snake:{commit-sha[:12]}` |
+| Public URL | `{APP_BASE_URL}/apps/snake/` | `{APP_BASE_URL}/apps/snake/` — identical pattern either way |
+
+---
+
+## How it works
+
+The short version, no jargon:
+
+1. **A developer submits an app.** Either a ZIP upload through the browser, or a `git push` to GatekeeperAI's built-in git server. Either way, the code lands in a bare git repository and the exact commit is recorded.
+2. **Five automated scanners run at once** — checking for hardcoded secrets, vulnerable dependencies, unexpected outbound network calls, exposed personal data, and (via Claude) anything that looks unsafe about how the app handles AI-specific risk. This takes seconds to about a minute, and the developer watches it happen live.
+3. **The scan produces a risk tier** — green, yellow, or red — and lands in a human reviewer's queue with a deadline attached. No app skips this step; nothing deploys on a scan result alone.
+4. **A reviewer approves or rejects it.** Rejections go back to the developer with feedback. Approval kicks off the deploy automatically.
+5. **The app is built and started in an isolated container** — read-only filesystem, dropped Linux capabilities, `no-new-privileges`, and hard CPU/memory limits are enforced by the platform no matter what's in the app's image. Non-root is the default too — GatekeeperAI's own generated Dockerfiles always switch to a non-root user — but a submission that brings its own Dockerfile controls that specific part itself (see the [worked example](#worked-example-snake) above). On Docker Compose this is a `docker build` on the same host; on Kubernetes it's a Kaniko build job that pushes to ECR and a Deployment that pulls from it.
+6. **The app gets a stable, access-gated URL.** Every request to it is checked against the platform's auth before the app ever sees the request — the app itself doesn't need to implement login, sessions, or permissions.
+7. **Everything is logged.** Every submission, scan, approval, deployment, and secret change is written to an append-only audit log, queryable by an admin and forwardable to a SIEM.
+
+That loop — submit, scan, approve, sandbox, gate, log — is the whole product. The two deployment backends above are two different ways of executing steps 5 and 6; the governance model (steps 1–4 and 7) is identical either way.
+
+---
+
 ## Why this stack
 
 **FastAPI over Django or Flask**
