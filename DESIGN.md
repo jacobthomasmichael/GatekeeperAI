@@ -4,6 +4,131 @@ A summary of the key choices behind GatekeeperAI's architecture — what I picke
 
 ---
 
+## Architecture diagrams
+
+Both deployment backends run the same application code behind the same `DEPLOY_BACKEND` switch — the diagrams below show how the request path and the deploy path differ between them.
+
+### Docker Compose deployment
+
+```mermaid
+flowchart LR
+    Browser["Browser"]
+
+    subgraph platform["GatekeeperAI — Docker Compose (single host)"]
+        Nginx["Nginx<br/>reverse proxy + auth_request"]
+        API["FastAPI<br/>:8000"]
+        Worker["Celery Worker<br/>scan + deploy tasks"]
+        Beat["Celery Beat<br/>SLA sweep every 15m"]
+        PG[("PostgreSQL")]
+        Redis[("Redis<br/>broker + JTI + challenges")]
+        Docker["Docker Daemon<br/>(host socket)"]
+    end
+
+    subgraph apps["Deployed app containers"]
+        App1["gka-{app}-{id}<br/>non-root · read-only FS · cap_drop=ALL"]
+    end
+
+    Browser -->|HTTPS| Nginx
+    Nginx -->|"/api/v1"| API
+    Nginx -->|"auth_request gate then proxy_pass"| App1
+    API --> PG
+    API --> Redis
+    API -->|enqueue| Worker
+    Worker --> PG
+    Worker --> Redis
+    Worker -->|build + run| Docker
+    Docker -.->|manages| App1
+    Beat --> PG
+
+    classDef entry fill:#4f46e5,stroke:#3730a3,color:#fff
+    classDef compute fill:#eef2ff,stroke:#4f46e5,color:#1e293b
+    classDef store fill:#f1f5f9,stroke:#64748b,color:#1e293b
+    classDef app fill:#dcfce7,stroke:#16a34a,color:#14532d
+    class Browser,Nginx entry
+    class API,Worker,Beat,Docker compute
+    class PG,Redis store
+    class App1 app
+```
+
+**Read on this:** everything — platform and every tenant app — runs as a container on one host. The worker holds the Docker socket, so it can build and run tenant images directly; that convenience is also the sharpest security edge on this path (see [Tradeoffs I made knowingly](#tradeoffs-i-made-knowingly)). Nginx is the only thing standing between the internet and a deployed app; it calls back into the API's `auth_request` endpoint on every single request before proxying through.
+
+### Kubernetes / EKS deployment
+
+```mermaid
+flowchart LR
+    Browser["Browser"]
+
+    subgraph eks["EKS cluster"]
+        subgraph platformns["gatekeeperai namespace"]
+            Ingress["nginx-ingress"]
+            API["FastAPI pods<br/>HPA 2-10 on CPU"]
+            Worker["Celery Worker pods"]
+            Beat["Celery Beat<br/>1 replica"]
+        end
+        subgraph buildns["gatekeeperai-builds namespace"]
+            Kaniko["Kaniko Job<br/>no Docker socket"]
+        end
+        subgraph appsns["gatekeeperai-apps namespace<br/>NetworkPolicy: no RFC-1918 egress"]
+            AppDeploy["App Deployment"]
+            AppSvc["ClusterIP Service"]
+            AppIngress["App Ingress<br/>auth-url annotation"]
+        end
+    end
+
+    subgraph aws["AWS managed services"]
+        RDS[("RDS PostgreSQL")]
+        EC[("ElastiCache Redis")]
+        S3[("S3<br/>build contexts")]
+        ECR[("ECR<br/>per-app repos")]
+    end
+
+    Browser -->|HTTPS| Ingress
+    Ingress -->|"/api/v1"| API
+    Ingress --> AppIngress --> AppSvc --> AppDeploy
+    API --> RDS
+    API --> EC
+    API -->|enqueue| Worker
+    Worker --> RDS
+    Worker -->|"1 . upload context"| S3
+    Worker -->|"2 . create Job"| Kaniko
+    Kaniko -->|"3 . read context"| S3
+    Kaniko -->|"4 . push image"| ECR
+    Worker -->|"5 . create Deployment"| AppDeploy
+    ECR -->|"pulls image"| AppDeploy
+    Beat --> RDS
+
+    classDef entry fill:#4f46e5,stroke:#3730a3,color:#fff
+    classDef compute fill:#eef2ff,stroke:#4f46e5,color:#1e293b
+    classDef build fill:#fef9c3,stroke:#ca8a04,color:#713f12
+    classDef store fill:#f1f5f9,stroke:#64748b,color:#1e293b
+    classDef app fill:#dcfce7,stroke:#16a34a,color:#14532d
+    class Browser,Ingress entry
+    class API,Worker,Beat compute
+    class Kaniko build
+    class RDS,EC,S3,ECR store
+    class AppDeploy,AppSvc,AppIngress app
+```
+
+**Read on this:** the platform and every tenant app now run in different namespaces with different blast radii. Kaniko builds images with no Docker socket and no daemon access at all — the numbered edges above are the actual build sequence (S3 upload → Kaniko Job → Kaniko reads S3 → pushes to ECR → worker creates the K8s Deployment → the pod pulls from ECR). RDS, ElastiCache, S3, and ECR are managed AWS services instead of containers on the same host, which is what lets the platform and the tenant apps scale independently of each other.
+
+---
+
+## How it works
+
+The short version, no jargon:
+
+1. **A developer submits an app.** Either a ZIP upload through the browser, or a `git push` to GatekeeperAI's built-in git server. Either way, the code lands in a bare git repository and the exact commit is recorded.
+2. **Five automated scanners run at once** — checking for hardcoded secrets, vulnerable dependencies, unexpected outbound network calls, exposed personal data, and (via Claude) anything that looks unsafe about how the app handles AI-specific risk. This takes seconds to about a minute, and the developer watches it happen live.
+3. **The scan produces a risk tier** — green, yellow, or red — and lands in a human reviewer's queue with a deadline attached. No app skips this step; nothing deploys on a scan result alone.
+4. **A reviewer approves or rejects it.** Rejections go back to the developer with feedback. Approval kicks off the deploy automatically.
+5. **The app is built and started in an isolated container** — non-root, read-only filesystem, dropped Linux capabilities, hard CPU/memory limits. On Docker Compose this is a `docker build` on the same host; on Kubernetes it's a Kaniko build job that pushes to ECR and a Deployment that pulls from it. Either way, the app never gets broader access than that sandbox.
+6. **The app gets a stable, access-gated URL.** Every request to it is checked against the platform's auth before the app ever sees the request — the app itself doesn't need to implement login, sessions, or permissions.
+7. **Everything is logged.** Every submission, scan, approval, deployment, and secret change is written to an append-only audit log, queryable by an admin and forwardable to a SIEM.
+
+That loop — submit, scan, approve, sandbox, gate, log — is the whole product. The two deployment backends above are two different ways of executing steps 5 and 6; the governance model (steps 1–4 and 7) is identical either way.
+
+---
+
 ## Why this stack
 
 **FastAPI over Django or Flask**
