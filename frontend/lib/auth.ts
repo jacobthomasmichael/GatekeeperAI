@@ -26,10 +26,23 @@ export function clearAuth() {
 }
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(getStoredUser);
-  const [loading, setLoading] = useState(!getStoredUser());
+  // Both start SSR-safe (null / loading) so the first render is identical on
+  // server and client — getStoredUser() reads localStorage, which doesn't
+  // exist during SSR, so calling it in a useState initializer previously
+  // made the client's first render diverge from the server's and triggered
+  // a hydration mismatch. The cached-user check now happens inside fetchMe,
+  // which only ever runs client-side inside a useEffect.
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const fetchMe = useCallback(async () => {
+    // Optimistically show the cached user immediately (avoids a loading
+    // flash for returning users) while still validating against the API below.
+    const cached = getStoredUser();
+    if (cached) {
+      setUser(cached);
+      setLoading(false);
+    }
     if (!getAccessToken()) {
       setUser(null);
       setLoading(false);

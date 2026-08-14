@@ -9,15 +9,15 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 // ─── Shared style tokens ────────────────────────────────────────────────────
 
 const inputCls =
-  "w-full rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+  "w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-signal-500";
 
 const primaryBtn =
-  "bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors";
+  "bg-signal-600 hover:bg-signal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors";
 
 const ghostBtn =
-  "text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white text-sm transition-colors";
+  "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-sm transition-colors";
 
-const labelCls = "block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1";
+const labelCls = "block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -39,8 +39,8 @@ function StepDots({ current, total }: { current: number; total: number }) {
           key={i}
           className={
             i < current
-              ? "h-2 w-2 rounded-full bg-indigo-600"
-              : "h-2 w-2 rounded-full bg-gray-300 dark:bg-slate-700"
+              ? "h-2 w-2 rounded-full bg-signal-600"
+              : "h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-700"
           }
         />
       ))}
@@ -177,25 +177,25 @@ export default function SetupPage() {
   // ── Loading / checking state ─────────────────────────────────────────────
   if (step === 0) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-slate-950">
-        <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <Loader2 className="h-6 w-6 animate-spin text-signal-600" />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-slate-950 px-4 py-12">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-gray-200 dark:border-slate-800 p-8 w-full max-w-lg">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-12">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-800 p-8 w-full max-w-lg">
 
         {/* ── Step 1: Welcome ─────────────────────────────────────────────── */}
         {step === 1 && (
           <div className="flex flex-col items-center text-center gap-6">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-600/20 border border-indigo-200 dark:border-indigo-600/30">
-              <Shield size={32} className="text-indigo-600 dark:text-indigo-400" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-signal-50 dark:bg-signal-600/20 border border-signal-200 dark:border-signal-600/30">
+              <Shield size={32} className="text-signal-600 dark:text-signal-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Welcome to GatekeeperAI</h1>
-              <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">
+              <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Welcome to GatekeeperAI</h1>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                 Let&rsquo;s configure your instance. This only takes a few minutes.
               </p>
             </div>
@@ -210,7 +210,7 @@ export default function SetupPage() {
           <div className="space-y-6">
             <StepDots current={1} total={4} />
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Company &amp; Server</h2>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Company &amp; Server</h2>
             </div>
             <div className="space-y-4">
               <div>
@@ -223,7 +223,7 @@ export default function SetupPage() {
                   className={inputCls}
                 />
                 {errors.company_name && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.company_name}</p>
+                  <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.company_name}</p>
                 )}
               </div>
               <div>
@@ -235,11 +235,11 @@ export default function SetupPage() {
                   placeholder="https://gatekeeper.acme.com"
                   className={inputCls}
                 />
-                <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                   We recommend using a subdomain like https://gatekeeper.yourcompany.com
                 </p>
                 {errors.server_url && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.server_url}</p>
+                  <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.server_url}</p>
                 )}
               </div>
             </div>
@@ -264,7 +264,7 @@ export default function SetupPage() {
           <div className="space-y-6">
             <StepDots current={2} total={4} />
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Create your admin account</h2>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Create your admin account</h2>
             </div>
             <div className="space-y-4">
               <div>
@@ -277,7 +277,7 @@ export default function SetupPage() {
                   className={inputCls}
                 />
                 {errors.admin_email && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.admin_email}</p>
+                  <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.admin_email}</p>
                 )}
               </div>
               <div>
@@ -290,7 +290,7 @@ export default function SetupPage() {
                   className={inputCls}
                 />
                 {errors.admin_username && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.admin_username}</p>
+                  <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.admin_username}</p>
                 )}
               </div>
               <div>
@@ -303,7 +303,7 @@ export default function SetupPage() {
                   className={inputCls}
                 />
                 {errors.admin_password && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.admin_password}</p>
+                  <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.admin_password}</p>
                 )}
               </div>
               <div>
@@ -316,7 +316,7 @@ export default function SetupPage() {
                   className={inputCls}
                 />
                 {errors.confirm_password && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.confirm_password}</p>
+                  <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.confirm_password}</p>
                 )}
               </div>
             </div>
@@ -341,8 +341,8 @@ export default function SetupPage() {
           <div className="space-y-6">
             <StepDots current={3} total={4} />
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Email Notifications</h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Email Notifications</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 Optional. Approvers and submitters will be notified by email.
               </p>
             </div>
@@ -399,15 +399,15 @@ export default function SetupPage() {
                   className={inputCls}
                 />
               </div>
-              <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-slate-700 px-3 py-2.5">
-                <span className="text-sm text-gray-700 dark:text-slate-300">Use TLS</span>
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2.5">
+                <span className="text-sm text-slate-700 dark:text-slate-300">Use TLS</span>
                 <button
                   type="button"
                   role="switch"
                   aria-checked={data.smtp_use_tls}
                   onClick={() => set("smtp_use_tls", !data.smtp_use_tls)}
                   className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    data.smtp_use_tls ? "bg-indigo-600" : "bg-gray-300 dark:bg-slate-600"
+                    data.smtp_use_tls ? "bg-signal-600" : "bg-slate-300 dark:bg-slate-600"
                   }`}
                 >
                   <span
@@ -420,7 +420,7 @@ export default function SetupPage() {
             </div>
 
             {submitError && (
-              <div className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700/40 px-3 py-2 text-sm text-red-600 dark:text-red-400">
+              <div className="rounded-md bg-critical-50 dark:bg-critical-900/30 border border-critical-200 dark:border-critical-700/40 px-3 py-2 text-sm text-critical-600 dark:text-critical-400">
                 {submitError}
               </div>
             )}
@@ -456,21 +456,21 @@ export default function SetupPage() {
             <StepDots current={4} total={4} />
             <CheckCircle size={56} className="text-green-500" />
             <div>
-              <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">GatekeeperAI is ready</h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Your instance is configured and good to go.</p>
+              <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">GatekeeperAI is ready</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Your instance is configured and good to go.</p>
             </div>
-            <div className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 p-4 text-left space-y-2">
+            <div className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4 text-left space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500 dark:text-slate-400">Company</span>
-                <span className="font-medium text-gray-900 dark:text-white">{data.company_name}</span>
+                <span className="text-slate-500 dark:text-slate-400">Company</span>
+                <span className="font-medium text-slate-900 dark:text-white">{data.company_name}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500 dark:text-slate-400">Server</span>
-                <span className="font-medium text-gray-900 dark:text-white break-all">{data.server_url}</span>
+                <span className="text-slate-500 dark:text-slate-400">Server</span>
+                <span className="font-medium text-slate-900 dark:text-white break-all">{data.server_url}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500 dark:text-slate-400">Admin</span>
-                <span className="font-medium text-gray-900 dark:text-white">{data.admin_email}</span>
+                <span className="text-slate-500 dark:text-slate-400">Admin</span>
+                <span className="font-medium text-slate-900 dark:text-white">{data.admin_email}</span>
               </div>
             </div>
             <button className={primaryBtn} onClick={() => router.push("/login")}>
