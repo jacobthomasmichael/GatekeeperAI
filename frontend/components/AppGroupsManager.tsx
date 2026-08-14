@@ -5,7 +5,7 @@ import { appsApi } from "@/lib/api";
 import { Tag, Trash2, Plus, ChevronDown, ChevronUp } from "lucide-react";
 
 const inputCls =
-  "rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+  "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-signal-500";
 
 interface Props {
   appId: string;
@@ -58,10 +58,10 @@ export default function AppGroupsManager({ appId, isOwner, ssoEnabled }: Props) 
   };
 
   return (
-    <div className="mt-3 border-t border-gray-100 dark:border-slate-800 pt-3">
+    <div className="mt-3 border-t border-slate-100 dark:border-slate-800 pt-3">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 text-xs font-medium text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 transition-colors"
+        className="flex items-center gap-2 text-xs font-medium text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
       >
         <Tag size={13} />
         Group Access
@@ -76,8 +76,8 @@ export default function AppGroupsManager({ appId, isOwner, ssoEnabled }: Props) 
       {open && (
         <div className="mt-3 space-y-3">
           {loading ? (
-            <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
-              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-200 dark:border-slate-700 border-t-indigo-500" />
+            <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-200 dark:border-slate-700 border-t-indigo-500" />
               Loading…
             </div>
           ) : (
@@ -94,7 +94,7 @@ export default function AppGroupsManager({ appId, isOwner, ssoEnabled }: Props) 
                         <button
                           onClick={() => handleRemove(g)}
                           disabled={removing === g}
-                          className="rounded-full text-violet-400 dark:text-violet-500 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-40 transition-colors"
+                          className="rounded-full text-violet-400 dark:text-violet-500 hover:text-critical-500 dark:hover:text-critical-400 disabled:opacity-40 transition-colors"
                           title="Remove group"
                         >
                           <Trash2 size={11} />
@@ -104,7 +104,7 @@ export default function AppGroupsManager({ appId, isOwner, ssoEnabled }: Props) 
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-gray-400 dark:text-slate-500">
+                <p className="text-xs text-slate-400 dark:text-slate-500">
                   No groups have access yet.
                 </p>
               )}
@@ -112,7 +112,7 @@ export default function AppGroupsManager({ appId, isOwner, ssoEnabled }: Props) 
               {isOwner && (
                 showForm ? (
                   <form onSubmit={handleAdd} className="space-y-2">
-                    {error && <p className="text-xs text-red-500">{error}</p>}
+                    {error && <p className="text-xs text-critical-500">{error}</p>}
                     <input
                       type="text"
                       placeholder="Group name or ID from your identity provider"
@@ -126,7 +126,7 @@ export default function AppGroupsManager({ appId, isOwner, ssoEnabled }: Props) 
                       <button
                         type="button"
                         onClick={() => { setShowForm(false); setGroupName(""); setError(""); }}
-                        className="rounded-lg border border-gray-200 dark:border-slate-700 px-3 py-1.5 text-xs text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
+                        className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                       >
                         Cancel
                       </button>

@@ -287,6 +287,11 @@ async def update_visibility(
             logging.getLogger(__name__).warning("proxy config update failed: %s", e)
 
     await db.commit()
+    # updated_at has onupdate=func.now(), which SQLAlchemy expires on commit
+    # regardless of the session's expire_on_commit=False — refresh explicitly
+    # so _with_rejection's synchronous getattr loop below doesn't trigger an
+    # unawaited lazy-load (crashes with sqlalchemy.exc.MissingGreenlet).
+    await db.refresh(app)
     return await _with_rejection(app, db)
 
 

@@ -165,3 +165,7 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Per-app nginx configs, written by the deploy worker at runtime
+# (Docker path — see backend/app/services/nginx_service.py)
+infra/nginx/conf.d/apps/*.conf

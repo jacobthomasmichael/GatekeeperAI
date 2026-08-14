@@ -60,7 +60,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-7 w-7 animate-spin rounded-full border-4 border-gray-200 dark:border-slate-700 border-t-indigo-500" />
+        <div className="h-7 w-7 animate-spin rounded-full border-4 border-slate-200 dark:border-slate-700 border-t-signal-500" />
       </div>
     );
   }
@@ -70,14 +70,14 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">My Apps</h1>
-          <p className="mt-1 text-sm text-gray-400 dark:text-slate-500">
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">My Apps</h1>
+          <p className="mt-1 text-sm text-slate-400 dark:text-slate-500">
             {apps.length} app{apps.length !== 1 ? "s" : ""} registered
           </p>
         </div>
         <Link
           href="/dashboard/submit"
-          className="flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+          className="flex items-center gap-2 rounded-full bg-signal-600 px-4 py-2 text-sm font-bold text-white hover:bg-signal-500 transition-colors"
         >
           <PlusCircle size={16} />
           Submit App
@@ -86,15 +86,15 @@ export default function DashboardPage() {
 
       {/* Empty state */}
       {apps.length === 0 && (
-        <div className="rounded-xl border border-dashed border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900/50 p-12 text-center">
-          <GitBranch size={32} className="mx-auto text-gray-300 dark:text-slate-600 mb-3" />
-          <h3 className="text-sm font-medium text-gray-600 dark:text-slate-300">No apps yet</h3>
-          <p className="mt-1 text-sm text-gray-400 dark:text-slate-500">
+        <div className="rounded-[22px] border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/50 p-12 text-center">
+          <GitBranch size={32} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
+          <h3 className="text-sm font-medium text-slate-600 dark:text-slate-300">No apps yet</h3>
+          <p className="mt-1 text-sm text-slate-400 dark:text-slate-500">
             Submit your first app to get started.
           </p>
           <Link
             href="/dashboard/submit"
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+            className="mt-4 inline-flex items-center gap-2 rounded-full bg-signal-600 px-4 py-2 text-sm font-bold text-white hover:bg-signal-500 transition-colors"
           >
             <PlusCircle size={14} />
             Submit App
@@ -112,21 +112,21 @@ export default function DashboardPage() {
           return (
             <div
               key={app.id}
-              className="rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 hover:border-gray-300 dark:hover:border-slate-700 transition-colors"
+              className="rounded-[22px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <h3 className="font-medium text-gray-900 dark:text-white truncate">{app.name}</h3>
+                    <h3 className="font-medium text-slate-900 dark:text-white truncate">{app.name}</h3>
                     <StatusBadge status={app.status} />
                     {app.risk_tier && <RiskBadge tier={app.risk_tier} size="sm" />}
                   </div>
                   {app.description && (
-                    <p className="mt-1 text-sm text-gray-400 dark:text-slate-500 line-clamp-1">
+                    <p className="mt-1 text-sm text-slate-400 dark:text-slate-500 line-clamp-1">
                       {app.description}
                     </p>
                   )}
-                  <div className="mt-2 flex flex-wrap gap-4 text-xs text-gray-400 dark:text-slate-600">
+                  <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-400 dark:text-slate-600">
                     {app.detected_type && <span>Type: {app.detected_type}</span>}
                     <span>Created: {new Date(app.created_at).toLocaleDateString()}</span>
                   </div>
@@ -139,7 +139,7 @@ export default function DashboardPage() {
                       href={deployment.public_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 rounded-md border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                      className="flex items-center gap-1.5 rounded-md border border-good-300 dark:border-good-700 bg-good-50 dark:bg-good-950/40 px-3 py-1.5 text-xs font-medium text-good-700 dark:text-good-300 hover:bg-good-100 dark:hover:bg-good-900/40 transition-colors"
                     >
                       <ExternalLink size={12} />
                       Open App
@@ -148,7 +148,7 @@ export default function DashboardPage() {
                   {scan && (
                     <Link
                       href={`/dashboard/scans/${scan.id}`}
-                      className="flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-slate-700 px-3 py-1.5 text-xs text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
+                      className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                     >
                       <ExternalLink size={12} />
                       Scan Report
@@ -162,17 +162,17 @@ export default function DashboardPage() {
 
               {/* Rejection feedback banner */}
               {app.rejection && (
-                <div className="mt-4 rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/40 p-4">
+                <div className="mt-4 rounded-lg border border-critical-200 dark:border-critical-800/60 bg-critical-50 dark:bg-critical-950/40 p-4">
                   <div className="flex items-start gap-3">
-                    <div className="mt-0.5 h-2 w-2 rounded-full bg-red-500 shrink-0" />
+                    <div className="mt-0.5 h-2 w-2 rounded-full bg-critical-500 shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                      <p className="text-sm font-medium text-critical-600 dark:text-critical-400">
                         Rejected by reviewer
-                        <span className="ml-2 text-xs font-normal text-red-400 dark:text-red-600">
+                        <span className="ml-2 text-xs font-normal text-critical-400 dark:text-critical-600">
                           {new Date(app.rejection.decided_at).toLocaleDateString()}
                         </span>
                       </p>
-                      <p className="mt-1 text-sm text-red-600/80 dark:text-red-300/80 leading-snug">
+                      <p className="mt-1 text-sm text-critical-600/80 dark:text-critical-300/80 leading-snug">
                         {app.rejection.comment}
                       </p>
                     </div>
@@ -253,8 +253,8 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
   const tabClass = (t: typeof mode) =>
     `rounded px-2.5 py-1 text-xs font-medium transition-colors ${
       mode === t
-        ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"
-        : "text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
+        ? "bg-signal-100 dark:bg-signal-900/40 text-signal-700 dark:text-signal-300"
+        : "text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
     }`;
 
   return (
@@ -267,7 +267,7 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
 
       {mode === "upload" && (
         <div className="space-y-2">
-          <p className="text-xs text-gray-400 dark:text-slate-500">
+          <p className="text-xs text-slate-400 dark:text-slate-500">
             Compress your app folder into a <code>.zip</code> file and upload it here — no git required.
           </p>
           <input
@@ -280,11 +280,11 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="flex items-center gap-2 rounded-md border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-950/40 px-3 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 rounded-md border border-signal-300 dark:border-signal-700 bg-signal-50 dark:bg-signal-950/40 px-3 py-2 text-xs font-medium text-signal-700 dark:text-signal-300 hover:bg-signal-100 dark:hover:bg-signal-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {uploading ? (
               <>
-                <span className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-signal-400 border-t-transparent" />
                 Uploading & scanning…
               </>
             ) : (
@@ -292,23 +292,23 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
             )}
           </button>
           {uploadError && (
-            <p className="text-xs text-red-500">{uploadError}</p>
+            <p className="text-xs text-critical-500">{uploadError}</p>
           )}
         </div>
       )}
 
       {mode === "new" && (
         <div className="space-y-1.5">
-          <p className="text-xs text-gray-400 dark:text-slate-500">
+          <p className="text-xs text-slate-400 dark:text-slate-500">
             Clone and start pushing — scans trigger automatically on each push to main.
           </p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded bg-gray-50 dark:bg-slate-950 px-3 py-1.5 text-xs text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-slate-800">
+            <code className="flex-1 truncate rounded bg-slate-50 dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800">
               {newProjectCmd}
             </code>
             <button
               onClick={() => copy(newProjectCmd)}
-              className="rounded border border-gray-200 dark:border-slate-700 px-2.5 py-1.5 text-xs text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shrink-0"
+              className="rounded border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shrink-0"
             >
               {copied ? "Copied!" : "Copy"}
             </button>
@@ -318,17 +318,17 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
 
       {mode === "existing" && (
         <div className="space-y-1.5">
-          <p className="text-xs text-gray-400 dark:text-slate-500">
+          <p className="text-xs text-slate-400 dark:text-slate-500">
             Add GatekeeperAI as a remote — each push to main triggers a scan automatically.
           </p>
           {[existingCmd, pushCmd].map((cmd) => (
             <div key={cmd} className="flex items-center gap-2">
-              <code className="flex-1 truncate rounded bg-gray-50 dark:bg-slate-950 px-3 py-1.5 text-xs text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-slate-800">
+              <code className="flex-1 truncate rounded bg-slate-50 dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800">
                 {cmd}
               </code>
               <button
                 onClick={() => copy(cmd)}
-                className="rounded border border-gray-200 dark:border-slate-700 px-2.5 py-1.5 text-xs text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shrink-0"
+                className="rounded border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shrink-0"
               >
                 {copied ? "Copied!" : "Copy"}
               </button>
@@ -350,22 +350,22 @@ function ContainerErrorPanel({ health, appId }: { health: ContainerHealth; appId
     : health.status;
 
   return (
-    <div className="mt-4 rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 p-4">
+    <div className="mt-4 rounded-lg border border-warn-200 dark:border-warn-800/60 bg-warn-50 dark:bg-warn-950/30 p-4">
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 h-2 w-2 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+        <div className="mt-0.5 h-2 w-2 rounded-full bg-warn-500 shrink-0 animate-pulse" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+          <p className="text-sm font-medium text-warn-800 dark:text-warn-400">
             Container is {statusLabel}
             {health.restart_count > 0 && (
-              <span className="ml-2 text-xs font-normal text-amber-500 dark:text-amber-600">
+              <span className="ml-2 text-xs font-normal text-warn-500 dark:text-warn-800">
                 {health.restart_count} restart{health.restart_count !== 1 ? "s" : ""}
               </span>
             )}
           </p>
-          <p className="mt-1 text-xs text-amber-600/80 dark:text-amber-300/70 leading-relaxed">
+          <p className="mt-1 text-xs text-warn-800/80 dark:text-warn-300/70 leading-relaxed">
             Your app is deployed but failing to start. Common causes:
           </p>
-          <ul className="mt-1.5 text-xs text-amber-600/80 dark:text-amber-300/70 space-y-0.5 list-disc list-inside">
+          <ul className="mt-1.5 text-xs text-warn-800/80 dark:text-warn-300/70 space-y-0.5 list-disc list-inside">
             <li>A dependency version mismatch — check that APIs you use exist in your pinned version</li>
             <li>A missing import or syntax error in <code className="font-mono">app.py</code></li>
             <li>An environment variable your app expects that hasn&apos;t been added to Secrets</li>
@@ -375,7 +375,7 @@ function ContainerErrorPanel({ health, appId }: { health: ContainerHealth; appId
             <div className="mt-3">
               <button
                 onClick={() => setShowLogs(v => !v)}
-                className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-medium"
+                className="text-xs text-warn-800 dark:text-warn-400 hover:underline font-medium"
               >
                 {showLogs ? "Hide logs ↑" : "View error logs ↓"}
               </button>
@@ -386,7 +386,7 @@ function ContainerErrorPanel({ health, appId }: { health: ContainerHealth; appId
               )}
             </div>
           )}
-          <p className="mt-3 text-xs text-amber-600/70 dark:text-amber-400/60">
+          <p className="mt-3 text-xs text-warn-800/70 dark:text-warn-400/60">
             Fix the issue and use <strong>Update App</strong> to upload a corrected zip.
           </p>
         </div>
@@ -421,12 +421,12 @@ function UpdateAppButton({ appId }: { appId: string }) {
       <button
         onClick={() => fileRef.current?.click()}
         disabled={uploading}
-        className="flex items-center gap-1.5 rounded-md border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 text-xs text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded-md border border-signal-300 dark:border-signal-700 bg-signal-50 dark:bg-signal-900/30 px-3 py-1.5 text-xs text-signal-700 dark:text-signal-300 hover:bg-signal-100 dark:hover:bg-signal-900/50 transition-colors disabled:opacity-50"
       >
         <RefreshCw size={12} className={uploading ? "animate-spin" : ""} />
         {uploading ? "Uploading…" : "Update App"}
       </button>
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      {error && <p className="mt-1 text-xs text-critical-500">{error}</p>}
     </div>
   );
 }

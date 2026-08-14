@@ -47,7 +47,7 @@ export default function ApprovalDetailPage() {
   if (loading || !approval) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-7 w-7 animate-spin rounded-full border-4 border-gray-200 dark:border-slate-700 border-t-indigo-500" />
+        <div className="h-7 w-7 animate-spin rounded-full border-4 border-slate-200 dark:border-slate-700 border-t-indigo-500" />
       </div>
     );
   }
@@ -58,37 +58,37 @@ export default function ApprovalDetailPage() {
     <div className="max-w-4xl space-y-6">
       <button
         onClick={() => router.back()}
-        className="flex items-center gap-1.5 text-sm text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300 transition-colors"
+        className="flex items-center gap-1.5 text-sm text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
       >
         <ArrowLeft size={14} />
         Back to queue
       </button>
 
       {/* App + scan summary */}
-      <div className="rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">{approval.app_name}</h1>
-            <p className="mt-1 text-sm text-gray-400 dark:text-slate-500">{approval.app_description}</p>
+            <h1 className="text-xl font-semibold text-slate-900 dark:text-white">{approval.app_name}</h1>
+            <p className="mt-1 text-sm text-slate-400 dark:text-slate-500">{approval.app_description}</p>
           </div>
           <RiskBadge tier={approval.risk_tier} score={approval.risk_score} size="lg" />
         </div>
-        <div className="grid grid-cols-2 gap-3 text-xs text-gray-400 dark:text-slate-500 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 text-xs text-slate-400 dark:text-slate-500 sm:grid-cols-4">
           <div>
-            <span className="block text-gray-600 dark:text-slate-400 font-medium mb-0.5">Commit</span>
-            <code className="text-gray-700 dark:text-slate-300">{approval.commit_sha?.slice(0, 8)}</code>
+            <span className="block text-slate-600 dark:text-slate-400 font-medium mb-0.5">Commit</span>
+            <code className="text-slate-700 dark:text-slate-300">{approval.commit_sha?.slice(0, 8)}</code>
           </div>
           <div>
-            <span className="block text-gray-600 dark:text-slate-400 font-medium mb-0.5">SLA Deadline</span>
+            <span className="block text-slate-600 dark:text-slate-400 font-medium mb-0.5">SLA Deadline</span>
             {new Date(approval.sla_deadline).toLocaleString()}
           </div>
           <div>
-            <span className="block text-gray-600 dark:text-slate-400 font-medium mb-0.5">Submitted</span>
+            <span className="block text-slate-600 dark:text-slate-400 font-medium mb-0.5">Submitted</span>
             {new Date(approval.created_at).toLocaleString()}
           </div>
           {decided && (
             <div>
-              <span className="block text-gray-600 dark:text-slate-400 font-medium mb-0.5">Decided</span>
+              <span className="block text-slate-600 dark:text-slate-400 font-medium mb-0.5">Decided</span>
               {new Date(approval.decided_at!).toLocaleString()}
             </div>
           )}
@@ -97,7 +97,7 @@ export default function ApprovalDetailPage() {
 
       {/* Scanner results */}
       <div>
-        <h2 className="text-sm font-medium text-gray-500 dark:text-slate-400 mb-3">Scanner Results</h2>
+        <h2 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-3">Scanner Results</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {approval.scan_results.map((r) => (
             <ScanResultCard key={r.id} result={r} />
@@ -111,40 +111,40 @@ export default function ApprovalDetailPage() {
           className={clsx(
             "rounded-xl border p-5",
             approval.decision === "approved"
-              ? "border-emerald-200 dark:border-emerald-800/40 bg-emerald-50 dark:bg-emerald-900/10"
-              : "border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10"
+              ? "border-good-200 dark:border-good-800/40 bg-good-50 dark:bg-good-900/10"
+              : "border-critical-200 dark:border-critical-800/40 bg-critical-50 dark:bg-critical-900/10"
           )}
         >
           <div className="flex items-center gap-2 mb-2">
             {approval.decision === "approved" ? (
-              <CheckCircle size={18} className="text-emerald-600 dark:text-emerald-400" />
+              <CheckCircle size={18} className="text-good-600 dark:text-good-400" />
             ) : (
-              <XCircle size={18} className="text-red-600 dark:text-red-400" />
+              <XCircle size={18} className="text-critical-600 dark:text-critical-400" />
             )}
             <span
               className={clsx(
                 "font-medium capitalize",
                 approval.decision === "approved"
-                  ? "text-emerald-700 dark:text-emerald-400"
-                  : "text-red-700 dark:text-red-400"
+                  ? "text-good-700 dark:text-good-400"
+                  : "text-critical-700 dark:text-critical-400"
               )}
             >
               {approval.decision}
             </span>
           </div>
           {approval.comment && (
-            <p className="text-sm text-gray-500 dark:text-slate-400">{approval.comment}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{approval.comment}</p>
           )}
         </div>
       ) : (
         <form
           onSubmit={handleDecide}
-          className="rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5"
+          className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5"
         >
-          <h2 className="text-base font-medium text-gray-900 dark:text-white">Make a Decision</h2>
+          <h2 className="text-base font-medium text-slate-900 dark:text-white">Make a Decision</h2>
 
           {error && (
-            <div className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700/40 px-3 py-2 text-sm text-red-600 dark:text-red-400">
+            <div className="rounded-md bg-critical-50 dark:bg-critical-900/30 border border-critical-200 dark:border-critical-700/40 px-3 py-2 text-sm text-critical-600 dark:text-critical-400">
               {error}
             </div>
           )}
@@ -156,8 +156,8 @@ export default function ApprovalDetailPage() {
               className={clsx(
                 "flex-1 flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-medium transition-colors",
                 decision === "approved"
-                  ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400"
-                  : "border-gray-300 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:border-gray-400 dark:hover:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-800"
+                  ? "border-good-500 bg-good-50 dark:bg-good-900/30 text-good-700 dark:text-good-400"
+                  : "border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800"
               )}
             >
               <CheckCircle size={16} />
@@ -169,8 +169,8 @@ export default function ApprovalDetailPage() {
               className={clsx(
                 "flex-1 flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-medium transition-colors",
                 decision === "rejected"
-                  ? "border-red-500 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400"
-                  : "border-gray-300 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:border-gray-400 dark:hover:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-800"
+                  ? "border-critical-500 bg-critical-50 dark:bg-critical-900/30 text-critical-700 dark:text-critical-400"
+                  : "border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800"
               )}
             >
               <XCircle size={16} />
@@ -179,8 +179,8 @@ export default function ApprovalDetailPage() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700 dark:text-slate-300">
-              Comment <span className="text-red-500 dark:text-red-400">*</span>
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              Comment <span className="text-critical-500 dark:text-critical-400">*</span>
             </label>
             <textarea
               value={comment}
@@ -188,7 +188,7 @@ export default function ApprovalDetailPage() {
               required
               rows={3}
               placeholder="Explain your decision (min 10 characters)..."
-              className="w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:border-signal-500 focus:outline-none focus:ring-1 focus:ring-signal-500 resize-none"
             />
           </div>
 
@@ -197,7 +197,7 @@ export default function ApprovalDetailPage() {
             disabled={!decision || submitting}
             className={clsx(
               "rounded-md px-5 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-              decision === "rejected" ? "bg-red-600 hover:bg-red-500" : "bg-indigo-600 hover:bg-indigo-500"
+              decision === "rejected" ? "bg-critical-600 hover:bg-critical-500" : "bg-signal-600 hover:bg-signal-500"
             )}
           >
             {submitting ? "Submitting..." : decision ? `Submit ${decision}` : "Select a decision"}

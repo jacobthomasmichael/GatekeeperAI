@@ -8,9 +8,9 @@ import { Fingerprint, Trash2, PlusCircle, Loader2, Monitor, Smartphone } from "l
 function DeviceIcon({ label }: { label: string | null }) {
   const lower = (label ?? "").toLowerCase();
   if (lower.includes("phone") || lower.includes("iphone") || lower.includes("android")) {
-    return <Smartphone size={14} className="shrink-0 text-gray-400 dark:text-slate-500" />;
+    return <Smartphone size={14} className="shrink-0 text-slate-400 dark:text-slate-500" />;
   }
-  return <Monitor size={14} className="shrink-0 text-gray-400 dark:text-slate-500" />;
+  return <Monitor size={14} className="shrink-0 text-slate-400 dark:text-slate-500" />;
 }
 
 export default function AccountPage() {
@@ -69,35 +69,35 @@ export default function AccountPage() {
   }
 
   const inputCls =
-    "rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+    "rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:border-signal-500 focus:outline-none focus:ring-1 focus:ring-signal-500";
 
   return (
     <div className="max-w-2xl space-y-8">
       <div>
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Account</h1>
-        <p className="mt-1 text-sm text-gray-400 dark:text-slate-500">{user?.email}</p>
+        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Account</h1>
+        <p className="mt-1 text-sm text-slate-400 dark:text-slate-500">{user?.email}</p>
       </div>
 
       {/* Passkey management */}
-      <section className="rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 divide-y divide-gray-100 dark:divide-slate-800">
+      <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800">
         <div className="p-5">
           <div className="flex items-center gap-2 mb-1">
-            <Fingerprint size={18} className="text-indigo-500" />
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Passkeys</h2>
+            <Fingerprint size={18} className="text-signal-500" />
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Passkeys</h2>
           </div>
-          <p className="text-xs text-gray-400 dark:text-slate-500">
+          <p className="text-xs text-slate-400 dark:text-slate-500">
             Sign in with Face ID, Touch ID, or Windows Hello — no password needed.
           </p>
         </div>
 
         {/* Feedback */}
         {error && (
-          <div className="px-5 py-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20">
+          <div className="px-5 py-3 text-sm text-critical-600 dark:text-critical-400 bg-critical-50 dark:bg-critical-900/20">
             {error}
           </div>
         )}
         {success && (
-          <div className="px-5 py-3 text-sm text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20">
+          <div className="px-5 py-3 text-sm text-good-600 dark:text-good-400 bg-good-50 dark:bg-good-900/20">
             {success}
           </div>
         )}
@@ -105,10 +105,10 @@ export default function AccountPage() {
         {/* Existing passkeys */}
         {loading ? (
           <div className="flex items-center justify-center h-20">
-            <Loader2 size={18} className="animate-spin text-gray-300 dark:text-slate-600" />
+            <Loader2 size={18} className="animate-spin text-slate-300 dark:text-slate-600" />
           </div>
         ) : passkeys.length === 0 ? (
-          <div className="px-5 py-6 text-center text-sm text-gray-400 dark:text-slate-500">
+          <div className="px-5 py-6 text-center text-sm text-slate-400 dark:text-slate-500">
             No passkeys enrolled yet.
           </div>
         ) : (
@@ -118,10 +118,10 @@ export default function AccountPage() {
                 <div className="flex items-center gap-2.5 min-w-0">
                   <DeviceIcon label={pk.device_label} />
                   <div className="min-w-0">
-                    <p className="text-sm text-gray-800 dark:text-slate-200 truncate">
+                    <p className="text-sm text-slate-800 dark:text-slate-200 truncate">
                       {pk.device_label ?? "Unnamed device"}
                     </p>
-                    <p className="text-xs text-gray-400 dark:text-slate-500">
+                    <p className="text-xs text-slate-400 dark:text-slate-500">
                       Added {new Date(pk.created_at).toLocaleDateString()}
                     </p>
                   </div>
@@ -129,7 +129,7 @@ export default function AccountPage() {
                 <button
                   onClick={() => handleRemove(pk.id)}
                   disabled={removing === pk.id}
-                  className="shrink-0 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-gray-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                  className="shrink-0 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-slate-400 dark:text-slate-500 hover:text-critical-600 dark:hover:text-critical-400 hover:bg-critical-50 dark:hover:bg-critical-900/20 transition-colors disabled:opacity-50"
                 >
                   {removing === pk.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                   Remove
@@ -141,7 +141,7 @@ export default function AccountPage() {
 
         {/* Enroll new passkey */}
         <div className="p-5 space-y-3">
-          <p className="text-xs font-medium text-gray-500 dark:text-slate-400">Add this device</p>
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Add this device</p>
           <div className="flex gap-2">
             <input
               type="text"
@@ -153,7 +153,7 @@ export default function AccountPage() {
             <button
               onClick={handleEnroll}
               disabled={enrolling}
-              className="flex items-center gap-1.5 rounded-md bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 whitespace-nowrap"
+              className="flex items-center gap-1.5 rounded-md bg-signal-600 hover:bg-signal-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 whitespace-nowrap"
             >
               {enrolling ? (
                 <Loader2 size={14} className="animate-spin" />

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { scansApi, type Scan } from "@/lib/api";
 import RiskBadge from "./RiskBadge";
 import ScanResultCard from "./ScanResultCard";
 import clsx from "clsx";
+import { Key, Package, Globe, Eye, Sparkles, Check, Loader2 } from "lucide-react";
 
 interface ScanEvent {
   event: string;
@@ -23,6 +24,8 @@ interface Props {
   onComplete?: (scan: Scan) => void;
 }
 
+const SCANNER_ORDER = ["secrets", "dependencies", "egress", "pii", "llm"] as const;
+
 const SCANNER_LABELS: Record<string, string> = {
   secrets: "Secrets",
   dependencies: "Dependencies",
@@ -31,6 +34,18 @@ const SCANNER_LABELS: Record<string, string> = {
   llm: "AI Analysis",
 };
 
+const SCANNER_ICONS: Record<string, React.ReactNode> = {
+  secrets: <Key size={15} />,
+  dependencies: <Package size={15} />,
+  egress: <Globe size={15} />,
+  pii: <Eye size={15} />,
+  llm: <Sparkles size={15} />,
+};
+
+type ScannerState = "waiting" | "running" | "done";
+
+const RING_CIRCUMFERENCE = 2 * Math.PI * 54; // r=54
+
 export default function ScanStream({ scanId, initialScan, onComplete }: Props) {
   const [events, setEvents] = useState<ScanEvent[]>([]);
   const [scan, setScan] = useState<Scan>(initialScan);
@@ -38,7 +53,6 @@ export default function ScanStream({ scanId, initialScan, onComplete }: Props) {
     initialScan.status === "complete" || initialScan.status === "failed"
   );
   const esRef = useRef<EventSource | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (done) return;
@@ -65,60 +79,114 @@ export default function ScanStream({ scanId, initialScan, onComplete }: Props) {
     return () => es.close();
   }, [scanId, done, onComplete]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [events]);
+  // Derive per-scanner state from the event stream — if the page loads after
+  // the scan already finished, scan.scan_results carries the same info.
+  const scannerStates = useMemo(() => {
+    const states: Record<string, ScannerState> = {};
+    for (const name of SCANNER_ORDER) states[name] = "waiting";
+    for (const evt of events) {
+      if (!evt.scanner) continue;
+      if (evt.event === "scanner_started") states[evt.scanner] = "running";
+      if (evt.event === "scanner_complete") states[evt.scanner] = "done";
+    }
+    if (scan.scan_results) {
+      for (const r of scan.scan_results) states[r.scanner_name] = "done";
+    }
+    if (done) {
+      for (const name of SCANNER_ORDER) if (states[name] === "waiting") states[name] = "done";
+    }
+    return states;
+  }, [events, scan.scan_results, done]);
+
+  const completedCount = SCANNER_ORDER.filter((n) => scannerStates[n] === "done").length;
+  const ringOffset = RING_CIRCUMFERENCE - (RING_CIRCUMFERENCE * completedCount) / SCANNER_ORDER.length;
+  const errorEvent = events.find((e) => e.event === "error");
 
   return (
     <div className="space-y-6">
-      {/* Status header */}
-      <div className="flex items-center gap-4">
-        {!done && <div className="h-3 w-3 animate-pulse rounded-full bg-blue-400" />}
-        <span className="text-sm text-gray-500 dark:text-slate-400">
-          {done ? "Scan complete" : "Scan in progress..."}
-        </span>
-        {scan.risk_tier && <RiskBadge tier={scan.risk_tier} score={scan.risk_score} />}
+      {/* Progress stage */}
+      <div className="grid grid-cols-1 items-center gap-8 rounded-[22px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-7 shadow-sm sm:grid-cols-[auto_1fr]">
+        <div className="relative mx-auto h-32 w-32 shrink-0">
+          <svg viewBox="0 0 120 120" className="h-32 w-32 -rotate-90">
+            <circle cx="60" cy="60" r="54" fill="none" strokeWidth="8" className="stroke-slate-100 dark:stroke-slate-800" />
+            <circle
+              cx="60"
+              cy="60"
+              r="54"
+              fill="none"
+              strokeWidth="8"
+              strokeLinecap="round"
+              className={clsx(
+                "transition-[stroke-dashoffset] duration-700 ease-out",
+                done && !errorEvent ? "stroke-good-500" : "stroke-signal-600"
+              )}
+              strokeDasharray={RING_CIRCUMFERENCE}
+              strokeDashoffset={ringOffset}
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+              {completedCount}/{SCANNER_ORDER.length}
+            </span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+              {done ? "Complete" : "Scanning"}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-0.5">
+          {SCANNER_ORDER.map((name) => {
+            const state = scannerStates[name];
+            return (
+              <div
+                key={name}
+                className="flex items-center gap-3 border-b border-slate-100 py-2.5 last:border-0 dark:border-slate-800/60"
+              >
+                <div
+                  className={clsx(
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors",
+                    state === "done" && "bg-good-50 text-good-600 dark:bg-good-950/40 dark:text-good-400",
+                    state === "running" && "bg-signal-50 text-signal-600 dark:bg-signal-950/40 dark:text-signal-400",
+                    state === "waiting" && "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500"
+                  )}
+                >
+                  {state === "running" ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : state === "done" ? (
+                    <Check size={14} />
+                  ) : (
+                    SCANNER_ICONS[name]
+                  )}
+                </div>
+                <span className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {SCANNER_LABELS[name]}
+                </span>
+                <span
+                  className={clsx(
+                    "text-xs font-medium",
+                    state === "done" && "text-good-600 dark:text-good-400",
+                    state === "running" && "text-signal-600 dark:text-signal-400",
+                    state === "waiting" && "text-slate-400 dark:text-slate-500"
+                  )}
+                >
+                  {state === "done" ? "Clear" : state === "running" ? "Scanning…" : "Waiting"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Live event log */}
-      {events.length > 0 && (
-        <div className="rounded-lg border border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-4 font-mono text-xs space-y-1.5 max-h-64 overflow-y-auto">
-          {events.map((evt, i) => (
-            <div key={i} className="flex gap-3">
-              <span className="text-gray-300 dark:text-slate-600 select-none">{i + 1}</span>
-              <span
-                className={clsx(
-                  evt.event === "error"            && "text-red-600 dark:text-red-400",
-                  evt.event === "complete"         && "text-emerald-600 dark:text-emerald-400",
-                  evt.event === "scanner_complete" && "text-blue-600 dark:text-blue-400",
-                  evt.event === "started"          && "text-gray-500 dark:text-slate-400",
-                  evt.event === "scanner_started"  && "text-gray-400 dark:text-slate-500"
-                )}
-              >
-                [{evt.event}]
-              </span>
-              {evt.scanner && (
-                <span className="text-gray-700 dark:text-slate-300">
-                  {SCANNER_LABELS[evt.scanner] ?? evt.scanner}
-                </span>
-              )}
-              {evt.severity && evt.severity !== "none" && (
-                <span className="text-gray-400 dark:text-slate-400">
-                  {evt.severity}
-                </span>
-              )}
-              {evt.duration_ms && (
-                <span className="text-gray-300 dark:text-slate-600">{evt.duration_ms}ms</span>
-              )}
-              {evt.message && <span className="text-red-600 dark:text-red-400">{evt.message}</span>}
-              {evt.risk_tier && (
-                <span className="text-gray-700 dark:text-slate-300">
-                  → {evt.risk_tier} (score: {evt.risk_score})
-                </span>
-              )}
-            </div>
-          ))}
-          <div ref={bottomRef} />
+      {errorEvent?.message && (
+        <div className="rounded-xl border border-critical-200 bg-critical-50 px-4 py-3 text-sm text-critical-700 dark:border-critical-800/50 dark:bg-critical-950/30 dark:text-critical-300">
+          {errorEvent.message}
+        </div>
+      )}
+
+      {scan.risk_tier && (
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-500 dark:text-slate-400">Result:</span>
+          <RiskBadge tier={scan.risk_tier} score={scan.risk_score} />
         </div>
       )}
 
