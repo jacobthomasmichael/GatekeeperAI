@@ -23,13 +23,15 @@ export default function AppGroupsManager({ appId, isOwner, ssoEnabled }: Props) 
   const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  if (!ssoEnabled) return null;
-
+  // Hooks must run unconditionally on every render (Rules of Hooks) -- the
+  // ssoEnabled early return happens below, after all hooks, not before them.
   useEffect(() => {
     if (!open) return;
     setLoading(true);
     appsApi.listGroups(appId).then((g) => { setGroups(g); setLoading(false); });
   }, [open, appId]);
+
+  if (!ssoEnabled) return null;
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();

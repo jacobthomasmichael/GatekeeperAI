@@ -12,7 +12,6 @@ import {
   type Deployment,
   type AppSubmission,
   type User,
-  type AuditLogEntry,
   type AuditLogPage,
   type SSOConfig,
   type SSOConfigCreate,
@@ -46,26 +45,6 @@ const inputCls =
 
 const primaryBtn =
   "rounded-lg bg-signal-600 hover:bg-signal-700 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50";
-
-const ROLE_LABELS: Record<string, string> = {
-  ic: "IC",
-  approver: "Approver",
-  admin: "Admin",
-};
-
-const ROLE_COLORS: Record<string, string> = {
-  ic: "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
-  approver: "bg-warn-50 dark:bg-warn-900/30 text-warn-800 dark:text-warn-300",
-  admin: "bg-signal-50 dark:bg-signal-900/30 text-signal-700 dark:text-signal-300",
-};
-
-function RolePill({ role }: { role: string }) {
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ROLE_COLORS[role] ?? ROLE_COLORS.ic}`}>
-      {ROLE_LABELS[role] ?? role}
-    </span>
-  );
-}
 
 // ── Dashboard tab ─────────────────────────────────────────────────────────────
 
@@ -638,6 +617,7 @@ function SSOTab() {
 
   const removeMapping = (group: string) => {
     setForm((f) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-to-omit pattern
       const { [group]: _, ...rest } = f.role_mappings;
       return { ...f, role_mappings: rest };
     });
