@@ -182,7 +182,7 @@ export default function DashboardPage() {
 
               {/* Container crash banner */}
               {isCrashing && (
-                <ContainerErrorPanel health={health} appId={app.id} />
+                <ContainerErrorPanel health={health} />
               )}
 
               {/* Clone URL */}
@@ -340,7 +340,7 @@ function CloneUrl({ appId, repoUrl }: { appId: string; repoUrl: string }) {
   );
 }
 
-function ContainerErrorPanel({ health, appId }: { health: ContainerHealth; appId: string }) {
+function ContainerErrorPanel({ health }: { health: ContainerHealth }) {
   const [showLogs, setShowLogs] = useState(false);
 
   const statusLabel = health.status === "restarting"
